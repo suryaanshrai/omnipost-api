@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "omnipost-api"
+version = "0.1.0"
+description = "Rest API for the Omnipost application"
+authors = ["Suryaansh Rai <suryaanshrai@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+django = "^5.1.7"
+requests = "^2.32.3"
+boto3 = "^1.37.13"
+python-dotenv = "^1.0.1"
+pillow = "^11.1.0"
+cryptography = "^44.0.2"
+gunicorn = "^23.0.0"
+psycopg2-binary = "^2.9.10"
+whitenoise = "^6.9.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

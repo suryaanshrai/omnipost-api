@@ -1,0 +1,50 @@
+{
+    "INSTANCE": {
+        "ACCESS_TOKEN": "",
+        "IG_ID": ""
+    },
+    "ACTIONS": {
+        "POST_IMAGE": [
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "image_url": "IMAGE_URL",
+                        "caption": "CAPTION"
+                    },
+                    "params" : {}
+                },
+                200,
+                {
+                    "id": "CONTAINER_ID"
+                }
+            ],
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media_publish",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "creation_id": "CONTAINER_ID"
+                    },
+                    "params" : {}
+                },
+                200,
+                {
+                    "id": "POST_ID"
+                }
+
+            ]
+        ]
+    }
+}
