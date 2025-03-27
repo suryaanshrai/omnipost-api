@@ -77,22 +77,15 @@ WSGI_APPLICATION = 'app.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-from dotenv import dotenv_values
 import os
-paths = [".env", "app/.env"]
-for p in paths: 
-    if os.path.exists(p):
-        env_values = dotenv_values(p)
-        break
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        'NAME': env_values['DB_NAME'],
-        'USER': env_values['DB_USER'],
-        'HOST': env_values['DB_HOST'],
-        'PORT': env_values['DB_PORT'],
-        'PASSWORD': env_values['DB_PASSWORD'],
+        'NAME': os.environ.get('DB_NAME'),
+        'USER': os.environ.get('DB_USER'),
+        'HOST': os.environ.get('DB_HOST'),
+        'PORT': os.environ.get('DB_PORT'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),
     }
 }
 
