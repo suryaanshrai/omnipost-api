@@ -687,7 +687,18 @@ files = [
 [package.extras]
 brotli = ["brotli"]
 
+[[package]]
+name = "zxcvbn"
+version = "4.5.0"
+description = ""
+optional = false
+python-versions = "*"
+files = [
+    {file = "zxcvbn-4.5.0-py2.py3-none-any.whl", hash = "sha256:2b6eed621612ce6d65e6e4c7455b966acee87d0280e257956b1f06ccc66bd5ff"},
+    {file = "zxcvbn-4.5.0.tar.gz", hash = "sha256:70392c0fff39459d7f55d0211151401e79e76fcc6e2c22b61add62900359c7c1"},
+]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "d3c7f7c5268e3aafe7b2d9c35a942da1c3719626371131e2dd3581b3a4dd161b"
+content-hash = "7d85ad90799c92b2e3ef09424b73d2bb3ce84102f4379b9df51d444ef98e3f84"

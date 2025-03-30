@@ -3,8 +3,11 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 import boto3
 from dotenv import dotenv_values
-import requests
-from omnipost_api.fernet import FernetEncryption
+import requests, os
+from omnipost_api.fernet import FernetEncryptor
+from zxcvbn import zxcvbn
+
+
 
 class User(AbstractUser):
     pass
@@ -89,29 +92,38 @@ class PlatformInstance(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     credentials = models.JSONField(default=dict, blank=True, null=True)
     salt = models.BinaryField(blank=True, null=True)
+
+    
     
     def save(self, password=None, *args, **kwargs):
         # Initialize credentials based on platform configs
+        if not password:
+            raise ValidationError("Password is required to encrypt credentials.")
+        
         instance_config = self.platform.config["INSTANCE"]
         for key in instance_config.keys():
             try:
-                if password:
-                    if self.salt:
-                        self.credentials[key] = FernetEncryption.encrypt_string(instance_config[key], password, self.salt)
-                    else:
-                        self.credentials[key], salt = FernetEncryption.encrypt_string(instance_config[key], password)
-                        self.salt = salt
-                else:
-                    self.credentials[key] = self.credentials[key] # Checks if the key exists or not
+                self.credentials[key] = self.credentials[key] # Checks if the key exists or not
             except KeyError:
-                raise ValueError(f"Missing credential '{key}' for platform instance")
+                self.credentials[key] = ''
+        
+        pswd_check = zxcvbn(password)
+        if pswd_check['score'] < 3 or pswd_check["feedback"]["warning"] or pswd_check["feedback"]["suggestions"]:
+            raise ValidationError(f"Weak password:{pswd_check["feedback"]["warning"]} {" ".join(pswd_check["feedback"]["suggestions"])}")
+            
+        encryptor = FernetEncryptor(password=password)
+        self.salt = encryptor.salt
+        self.credentials = encryptor.encrypt_dict(self.credentials)
+            
         super().save(*args, **kwargs)
     
-    def get_credential(self, credential, password=None):
-        if password is not None:
-            return self.credentials[credential]
+    def get_credentials(self, password=None):
+        if password is None:
+            raise ValueError("Password is required to decrypt credentials.")
         else:
-            return FernetEncryption.decrypt_string(self.credentials[credential], password, self.salt)
+            encryptor = FernetEncryptor(salt=self.salt, password=password)
+            decrypted_credentials = encryptor.decrypt_dict_keys(self.credentials)
+            return decrypted_credentials
         
     def __str__(self):
         return f"{self.platform.name} - {self.user.username}"
@@ -127,7 +139,7 @@ class PostBase(models.Model):
     class Meta:
         abstract = True
     
-    def run_action(self, action, platform_instance: PlatformInstance) -> bool:
+    def run_action(self, action, platform_instance: PlatformInstance, password: str = None) -> bool:
         """
         Execute an action on a platform instance
         
@@ -145,12 +157,14 @@ class PostBase(models.Model):
                 request_string = request_string.replace(f"{key}",f"{value}")
             request = json.loads(request_string)
             return request
+        
         a = platform_instance.platform.config["ACTIONS"][action].copy()
         
         for request, expected_response_code, variable_mapping in a:
-            request = replace_keys(request, platform_instance.credentials)
+            request = replace_keys(request, platform_instance.credentials.get_credentials(password=password))
             request = replace_keys(request, self.post_configs[platform_instance.platform.name])
-            print("Request: ", request)
+            
+            # print("Request: ", request)
             response = requests.request(
                 request["method"],
                 request["base_url"] + request["endpoint"],
@@ -159,6 +173,7 @@ class PostBase(models.Model):
                 json=request["payload"]
             )
             # print("Response: ", response)
+            
             if response.status_code != expected_response_code:
                 raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post.")
             
@@ -169,7 +184,7 @@ class PostBase(models.Model):
             
         return True
         
-    def run_action_on_all_platforms(self, action):
+    def run_action_on_all_platforms(self, action: str, password: str = None):
         """
         Execute an action on all platform instances
         """
@@ -180,13 +195,11 @@ class PostBase(models.Model):
         """
         Save a file to the AWS cloud for public access
         """
-        s3_creds = dotenv_values(".env")
-
         try:
             client = boto3.client(
                 's3',
-                aws_access_key_id=s3_creds["AWS_ACCESS_KEY"],
-                aws_secret_access_key=s3_creds["AWS_SECRET_KEY"]
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_KEY")
             )
 
             client.upload_file(file_path, 'omnipost-images', file_name)
@@ -207,19 +220,19 @@ class PostImage(PostBase):
     image_url = models.URLField(blank=True, null=True)
     
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        super().save()
         
         if self.post_configs == {}: 
-            for platform_instance in self.platform_instances.all():
-                self.post_configs[f"{platform_instance.platform.name}"] = {
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
                     "CAPTION": self.caption,
                     "IMAGE_URL": self.image_url
                 }
-            super().save(*args, **kwargs)
+            super().save()
         
         if self.image and self.image_url is None:
             self.save_to_aws_s3(self.image.path, self.image.name)
-            cloud_url = dotenv_values(".env")["BUCKET_URL"]
+            cloud_url = os.environ.get('BUCKET_URL')
             self.image_url = f"{cloud_url}/{self.image.name}"
             for platform_instance in self.platform_instances.all():
                 self.post_configs[f"{platform_instance.platform.name}"]["IMAGE_URL"] = self.image_url

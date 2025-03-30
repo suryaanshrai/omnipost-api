@@ -1,92 +1,68 @@
+import base64
+import os
+from typing import Dict, Any
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
-import os
 
-class FernetEncryption:
-    @staticmethod
-    def generate_key_from_password(password, salt=None):
-        """Convert a user password into a Fernet key"""
-        if isinstance(password, str):
-            password = password.encode('utf-8')
-
-        # Generate a salt if not provided
-        if salt is None:
-            salt = os.urandom(16)
-
-        # Create a key derivation function
+class FernetEncryptor:
+    def __init__(self, password: str = None, salt: bytes = None):
+        """
+        Initialize the encryptor with password and optional salt.
+        If salt is not provided, a random one will be generated.
+        """
+        if password is None:
+            password = base64.urlsafe_b64encode(os.urandom(32)).decode('utf-8')
+        self.password = password.encode()
+        self.salt = salt or os.urandom(16)  # Generate salt if not provided
+        self.fernet = self._create_fernet()
+    
+    def _create_fernet(self) -> Fernet:
+        """Create a Fernet instance using the password and salt."""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=salt,
+            salt=self.salt,
             iterations=100000,
         )
-
-        # Derive a key from the password
-        key = base64.urlsafe_b64encode(kdf.derive(password))
-
-        return key, salt
-
-    @staticmethod
-    def encrypt_string(string_to_encrypt, user_key, salt=None):
-        """Encrypt a string using a user-provided key"""
-        if isinstance(string_to_encrypt, str):
-            string_to_encrypt = string_to_encrypt.encode('utf-8')
-
-        # Generate a Fernet key from the user key
-        key, salt = FernetEncryption.generate_key_from_password(user_key, salt)
-
-        # Create a Fernet object
-        f = Fernet(key)
-
-        # Encrypt the string
-        encrypted_string = f.encrypt(string_to_encrypt)
-
-        # Return both the encrypted string and the salt (needed for decryption)
-        return encrypted_string, salt
-
-    @staticmethod
-    def decrypt_string(encrypted_string, user_key, salt):
-        """Decrypt a string using the user-provided key and salt"""
-        # Generate the same Fernet key using the user key and stored salt
-        key, _ = FernetEncryption.generate_key_from_password(user_key, salt)
-
-        # Create a Fernet object
-        f = Fernet(key)
-
-        # Decrypt the string
-        decrypted_string = f.decrypt(encrypted_string)
-
-        return decrypted_string.decode('utf-8')
-
-# Example usage
-if __name__ == "__main__":
-    # The secure string you want to protect
-    secure_string = "This is my confidential information"
+        key = base64.urlsafe_b64encode(kdf.derive(self.password))
+        return Fernet(key)
     
-    # User provides this key/password
-    user_key = "user_secret_password"
+    def encrypt(self, data: str) -> bytes:
+        """Encrypt a string and return bytes."""
+        return self.fernet.encrypt(data.encode()).decode()
     
-    # Encrypt the string
-    encrypted_data, salt = FernetEncryption.encrypt_string(secure_string, user_key)
+    def decrypt(self, token: str) -> str:
+        """Decrypt bytes and return a string."""
+        return self.fernet.decrypt(token.encode()).decode()
     
-    # Store these values in your database or file system
-    # - encrypted_data: The encrypted string
-    # - salt: The salt used for key derivation
+    def encrypt_dict(self, data: Dict[str, str]) -> Dict[str, str]:
+        """Encrypt all keys in a dictionary."""
+        encrypted_dict = {}
+        for key, value in data.items():
+            # Encrypt the key
+            enc_val = self.encrypt(value)
+            encrypted_dict[key] = enc_val
+                
+        return encrypted_dict
     
-    print(f"Encrypted: {encrypted_data}")
-    print(f"Salt: {base64.b64encode(salt).decode('utf-8')}")
+    def decrypt_dict_keys(self, data: Dict[str, str]) -> Dict[str, str]:
+        """Decrypt all keys in a dictionary."""
+        decrypted_dict = {}
+        for key, value in data.items():
+            # Decrypt the key
+            decrypted_value = self.decrypt(value)
+            decrypted_dict[key] = decrypted_value
+                
+        return decrypted_dict
     
-    # Later, when the user wants to access the secure string:
-    try:
-        # User provides the same key
-        recovered_string = FernetEncryption.decrypt_string(encrypted_data, user_key, salt)
-        print(f"Decrypted: {recovered_string}")
-        
-        # Test with wrong key
-        wrong_key = "wrong_password"
-        recovered_string = FernetEncryption.decrypt_string(encrypted_data, wrong_key, salt)
-        print(f"Decrypted with wrong key: {recovered_string}")  # Should fail
-    except Exception as e:
-        print(f"Decryption failed: {e}")
+    def get_salt_b64(self) -> str:
+        """Get the salt as a base64 encoded string for storage."""
+        return base64.b64encode(self.salt).decode()
+    
+    @classmethod
+    def from_salt_b64(cls, password: str, salt_b64: str):
+        """Create an encryptor instance from a base64 encoded salt string."""
+        salt = base64.b64decode(salt_b64)
+        return cls(password, salt)
