@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import Platform, PlatformInstance, PostImage
+from .models import Platform, PlatformInstance, PostImage, ShortFormVideo, PostVideo, Stories
 
 @admin.register(Platform)
 class PlatformAdmin(admin.ModelAdmin):
@@ -28,4 +28,16 @@ class PlatformInstanceAdmin(admin.ModelAdmin):
 
 @admin.register(PostImage)
 class PostImageAdmin(admin.ModelAdmin):
+    pass
+
+@admin.register(ShortFormVideo)
+class ShortFormVideoAdmin(admin.ModelAdmin):
+    pass
+
+@admin.register(PostVideo)
+class PostVideoAdmin(admin.ModelAdmin):
+    pass
+
+@admin.register(Stories)
+class StoriesAdmin(admin.ModelAdmin):
     pass

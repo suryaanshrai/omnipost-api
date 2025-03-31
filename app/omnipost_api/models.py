@@ -148,7 +148,7 @@ class PostBase(models.Model):
             platform_instance (PlatformInstance): The platform instance to execute the action on
         """
         if action not in platform_instance.platform.config["ACTIONS"]:
-            raise ValueError(f"Action '{action}' not defined in platform configuration")
+            raise ValueError(f"Action '{action}' not defined in platform {platform_instance.platform.name}.")
         
         def replace_keys(request, keys):
             import json
@@ -161,7 +161,7 @@ class PostBase(models.Model):
         a = platform_instance.platform.config["ACTIONS"][action].copy()
         
         for request, expected_response_code, variable_mapping in a:
-            request = replace_keys(request, platform_instance.credentials.get_credentials(password=password))
+            request = replace_keys(request, platform_instance.get_credentials(password=password))
             request = replace_keys(request, self.post_configs[platform_instance.platform.name])
             
             # print("Request: ", request)
@@ -172,7 +172,7 @@ class PostBase(models.Model):
                 params=request["params"],
                 json=request["payload"]
             )
-            # print("Response: ", response)
+            # print("Response: ", response.text)
             
             if response.status_code != expected_response_code:
                 raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post.")
@@ -214,7 +214,6 @@ class PostImage(PostBase):
     """
     A normal post. text and image
     """
-        
     caption = models.TextField(blank=True, null=True)
     image = models.ImageField(upload_to='media/', blank=True, null=True)
     image_url = models.URLField(blank=True, null=True)
@@ -234,24 +233,86 @@ class PostImage(PostBase):
             self.save_to_aws_s3(self.image.path, self.image.name)
             cloud_url = os.environ.get('BUCKET_URL')
             self.image_url = f"{cloud_url}/{self.image.name}"
-            for platform_instance in self.platform_instances.all():
-                self.post_configs[f"{platform_instance.platform.name}"]["IMAGE_URL"] = self.image_url
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.image_url
             super().save()
             
 class PostVideo(PostBase):
-    pass
+    caption = models.TextField(blank=True, null=True)
+    video = models.FileField(upload_to='media/', blank=True, null=True)
+    video_url = models.URLField(blank=True, null=True)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "VIDEO_URL": self.video_url
+                }
+            super().save()
+        
+        if self.video and self.video_url is None:
+            self.save_to_aws_s3(self.video.path, self.video.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.video_url = f"{cloud_url}/{self.video.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
+            super().save()
 
 class ShortFormVideo(PostBase):
     """
     A short video, like reels, for any platform in general
     """
-    pass
-
+    caption = models.TextField(blank=True, null=True)
+    video = models.FileField(upload_to='media/', blank=True, null=True)
+    video_url = models.URLField(blank=True, null=True)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "VIDEO_URL": self.video_url
+                }
+            super().save()
+        
+        if self.video and self.video_url is None:
+            self.save_to_aws_s3(self.video.path, self.video.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.video_url = f"{cloud_url}/{self.video.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
+            super().save()
+            
 class Stories(PostBase):
     """
     Stories/status for any platform in general
     """
-    pass
+    media = models.FileField(upload_to='media/', blank=True, null=True)
+    media_url = models.URLField(blank=True, null=True)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "MEDIA_URL": self.video_url
+                }
+            super().save()
+        
+        if self.media and self.media_url is None:
+            self.save_to_aws_s3(self.media.path, self.media.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.media_url = f"{cloud_url}/{self.media.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["MEDIA_URL"] = self.media_url
+            super().save()
 
 
 class Docs(models.Model):
