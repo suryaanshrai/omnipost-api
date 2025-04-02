@@ -90,7 +90,6 @@ class PlatformInstance(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     credentials = models.JSONField(default=dict, blank=True, null=True)
     salt = models.BinaryField(blank=True, null=True)
-
     
     
     def save(self, password=None, *args, **kwargs):
@@ -343,7 +342,7 @@ class Docs(models.Model):
     """
     Documents for any platform in general
     """
-    remote_doc = models.URLField(blank=True, null=True)
+    youtube_video = models.URLField(blank=True, null=True)
     custom_doc = models.TextField(blank=True, null=True)
     platform = models.ForeignKey(Platform, on_delete=models.CASCADE, blank=True, null=True)
     platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
@@ -353,7 +352,14 @@ class Notifications(models.Model):
     """
     Any notifications from the platform
     """
-    pass
+    platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
+    notification = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    error = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.platform.name} - {self.notification}"
 
 def replace_keys(request: dict, keys: dict) -> dict:
     """
@@ -386,11 +392,23 @@ def send_request(
     )
 
     if response.status_code != expected_response_code:
+        Notifications(
+            platform_instance=platform_instance,
+            user=post_object.user,
+            notification=f"Something went wrong. {response.text}",
+            error=True
+        ).save()
         raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
 
     for key, value in variable_mapping.items():
         post_object.post_configs[platform_instance.platform.name][value] = response.json()[key]
-
     post_object.save()
 
+    if post_object.post_configs[platform_instance.platform.name]['terminal_request']:
+        Notifications(
+            platform_instance=platform_instance,
+            user=post_object.user,
+            notification=f"Post created successfully",
+        ).save()
+    
     return True
