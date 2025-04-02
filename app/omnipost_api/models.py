@@ -1,13 +1,11 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-import boto3
-from dotenv import dotenv_values
-import requests, os
-from omnipost_api.fernet import FernetEncryptor
+from django.utils import timezone
+import boto3, requests, os, json
 from zxcvbn import zxcvbn
-
-
+from django_rq import get_queue
+from omnipost_api.fernet import FernetEncryptor
 
 class User(AbstractUser):
     pass
@@ -135,61 +133,67 @@ class PostBase(models.Model):
     platform_instances = models.ManyToManyField(PlatformInstance)
     created_at = models.DateTimeField(auto_now_add=True)
     post_configs = models.JSONField(default=dict, blank=True, null=True)
+    schedule = models.DateTimeField(blank=True, null=True)
     
     class Meta:
         abstract = True
     
-    def run_action(self, action, platform_instance: PlatformInstance, password: str = None) -> bool:
+    def run_action(
+        self,
+        action: str,
+        platform_instance: PlatformInstance, 
+        password: str = None,
+        delay: int = 5,
+    ) -> None:
         """
         Execute an action on a platform instance
         
         Args:
-            action (str): The action to execute (such as POST_IMAGE, POST_VIDEO, etc.)
+            action (str): The action to execute
             platform_instance (PlatformInstance): The platform instance to execute the action on
+            password (str): The password to decrypt the credentials
+            delay (int): The delay between each request (in seconds)
+            max_retries (int): The maximum number of retries
+        Returns:
+            bool: True if the action was executed successfully, False otherwise
+        Raises:
+            ValueError: If the action is not defined in the platform instance
         """
         if action not in platform_instance.platform.config["ACTIONS"]:
             raise ValueError(f"Action '{action}' not defined in platform {platform_instance.platform.name}.")
-        
-        def replace_keys(request, keys):
-            import json
-            request_string = json.dumps(request)
-            for key, value in keys.items():
-                request_string = request_string.replace(f"{key}",f"{value}")
-            request = json.loads(request_string)
-            return request
-        
-        a = platform_instance.platform.config["ACTIONS"][action].copy()
-        
-        for request, expected_response_code, variable_mapping in a:
-            request = replace_keys(request, platform_instance.get_credentials(password=password))
-            request = replace_keys(request, self.post_configs[platform_instance.platform.name])
             
-            # print("Request: ", request)
-            response = requests.request(
-                request["method"],
-                request["base_url"] + request["endpoint"],
-                headers=request["headers"],
-                params=request["params"],
-                json=request["payload"]
+        a = platform_instance.platform.config["ACTIONS"][action]
+        iteration = 1
+        for request, expected_response_code, variable_mapping in a:            
+            q = get_queue('default')
+            q.enqueue_at(
+                timezone.now()+timezone.timedelta(seconds=delay*iteration), 
+                send_request,
+                post_object=self,
+                platform_instance=platform_instance,
+                request=request,
+                expected_response_code=expected_response_code,
+                variable_mapping=variable_mapping,
+                password=password,
             )
-            # print("Response: ", response.text)
+            iteration += 1
             
-            if response.status_code != expected_response_code:
-                raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post.")
-            
-            for key, value in variable_mapping.items():
-                self.post_configs[platform_instance.platform.name][value] = response.json()[key]
-            
-            self.save()
-            
-        return True
-        
-    def run_action_on_all_platforms(self, action: str, password: str = None):
+    def run_action_on_all_platforms(
+        self, 
+        action: str, 
+        password: str = None,
+        delay: int = 5,
+        ) -> None:
         """
         Execute an action on all platform instances
+        
+        Args:
+            action (str): The action to execute
+            password (str): The password to decrypt the credentials
+            delay (int): The delay between each request (in seconds)
         """
         for platform_instance in self.platform_instances.all():
-            self.run_action(action, platform_instance)
+            self.run_action(action=action, platform_instance=platform_instance, password=password, delay=delay)
     
     def save_to_aws_s3(self, file_path, file_name):
         """
@@ -208,6 +212,26 @@ class PostBase(models.Model):
             raise ValueError(f"Failed to upload file to cloud: {e}")
 
         return True
+        
+        
+        
+class PostText(PostBase):
+    """
+    A text post
+    """
+    text = models.TextField(blank=False)
+
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "TEXT": self.text,
+                }
+            super().save()
+
         
         
 class PostImage(PostBase):
@@ -234,7 +258,7 @@ class PostImage(PostBase):
             cloud_url = os.environ.get('BUCKET_URL')
             self.image_url = f"{cloud_url}/{self.image.name}"
             for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.image_url
+                self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
             super().save()
             
 class PostVideo(PostBase):
@@ -302,7 +326,7 @@ class Stories(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"] = {
                     "CAPTION": self.caption,
-                    "MEDIA_URL": self.video_url
+                    "STORY_URL": self.video_url
                 }
             super().save()
         
@@ -311,7 +335,7 @@ class Stories(PostBase):
             cloud_url = os.environ.get('BUCKET_URL')
             self.media_url = f"{cloud_url}/{self.media.name}"
             for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["MEDIA_URL"] = self.media_url
+                self.post_configs[f"{platform.name}"]["STORY_URL"] = self.media_url
             super().save()
 
 
@@ -330,3 +354,43 @@ class Notifications(models.Model):
     Any notifications from the platform
     """
     pass
+
+def replace_keys(request: dict, keys: dict) -> dict:
+    """
+    Replace keys in the request dictionary with values from the keys dictionary.
+    """
+    request_string = json.dumps(request)
+    for key, value in keys.items():
+        request_string = request_string.replace(f"{key}",f"{value}")
+    request = json.loads(request_string)
+    return request
+
+def send_request(
+    post_object: PostBase,
+    platform_instance: PlatformInstance,
+    request: dict,
+    expected_response_code: int,
+    variable_mapping: dict,
+    password: str,
+    ) -> bool:
+
+    request = replace_keys(request, platform_instance.get_credentials(password=password))
+    request = replace_keys(request, post_object.post_configs[platform_instance.platform.name])
+    
+    response = requests.request(
+        request["method"],
+        request["base_url"] + request["endpoint"],
+        headers=request["headers"],
+        params=request["params"],
+        json=request["payload"]
+    )
+
+    if response.status_code != expected_response_code:
+        raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
+
+    for key, value in variable_mapping.items():
+        post_object.post_configs[platform_instance.platform.name][value] = response.json()[key]
+
+    post_object.save()
+
+    return True

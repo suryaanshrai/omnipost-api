@@ -41,11 +41,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'omnipost_api',
+    'django_rq',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -75,29 +77,37 @@ TEMPLATES = [
 WSGI_APPLICATION = 'app.wsgi.application'
 
 
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
+
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 import os
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME', 'omni-db'),
         'USER': os.environ.get('DB_USER', 'root'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),
+    },
+}
+
+RQ_QUEUES = {
+    'default': {
+        'HOST': os.environ.get('REDIS_HOST', 'localhost'),
+        'PORT': 6379,
+        'DB': 0,
+        'DEFAULT_TIMEOUT': 360,
     }
 }
-
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -123,7 +133,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
 

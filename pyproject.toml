@@ -4,20 +4,28 @@ version = "0.1.0"
 description = "Rest API for the Omnipost application"
 authors = ["Suryaansh Rai <suryaanshrai@gmail.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
 django = "^5.1.7"
 requests = "^2.32.3"
 boto3 = "^1.37.13"
-python-dotenv = "^1.0.1"
 pillow = "^11.1.0"
 cryptography = "^44.0.2"
 gunicorn = "^23.0.0"
 psycopg2-binary = "^2.9.10"
 whitenoise = "^6.9.0"
 zxcvbn = "^4.5.0"
+django-rq = "^3.0.0"
 
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+django-extensions = "^3.2.3"
+pygraphviz = "^1.14"
+jupyterlab = "^4.3.6"
 
 [build-system]
 requires = ["poetry-core"]
