@@ -41,9 +41,9 @@
                 },
                 200,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request": true
                 }
-
             ]
         ],
         "POST_SHORT_FORM_VIDEO" : [
@@ -87,9 +87,9 @@
                 },
                 200,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request": true
                 }
-
             ]
         ]
     }
