@@ -1,0 +1,9 @@
+17:42:37 Worker rq:worker:1aab33f464de4d6ebc5b64d3a2aa5e6e started with PID 9584, version 2.2.0
+17:42:37 Subscribing to channel rq:pubsub:1aab33f464de4d6ebc5b64d3a2aa5e6e
+17:42:37 *** Listening on default...
+17:42:37 Scheduler for default started with PID 9616
+17:42:37 Cleaning registries for queue: default
+17:42:41 Worker 1aab33f464de4d6ebc5b64d3a2aa5e6e [PID 9584]: warm shut down requested
+17:42:42 Scheduler stopping, releasing locks for default...
+17:42:42 Scheduler with PID 9616 has stopped
+17:42:42 Unsubscribing from channel rq:pubsub:1aab33f464de4d6ebc5b64d3a2aa5e6e

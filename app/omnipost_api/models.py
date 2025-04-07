@@ -1,14 +1,14 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-import boto3
-from dotenv import dotenv_values
-import requests
-from omnipost_api.fernet import FernetEncryption
+from django.utils import timezone
+import boto3, requests, os, json
+from zxcvbn import zxcvbn
+from django_rq import get_queue
+from omnipost_api.fernet import FernetEncryptor
 
 class User(AbstractUser):
     pass
-
 
 
 class Platform(models.Model):
@@ -90,28 +90,37 @@ class PlatformInstance(models.Model):
     credentials = models.JSONField(default=dict, blank=True, null=True)
     salt = models.BinaryField(blank=True, null=True)
     
+    
     def save(self, password=None, *args, **kwargs):
         # Initialize credentials based on platform configs
-        instance_config = self.platform.config["INSTANCE"]
-        for key in instance_config.keys():
-            try:
-                if password:
-                    if self.salt:
-                        self.credentials[key] = FernetEncryption.encrypt_string(instance_config[key], password, self.salt)
-                    else:
-                        self.credentials[key], salt = FernetEncryption.encrypt_string(instance_config[key], password)
-                        self.salt = salt
-                else:
-                    self.credentials[key] = self.credentials[key] # Checks if the key exists or not
-            except KeyError:
-                raise ValueError(f"Missing credential '{key}' for platform instance")
+        # if not password:
+        #     raise ValidationError("Password is required to encrypt credentials.")
+        
+        # instance_config = self.platform.config["INSTANCE"]
+        # for key in instance_config.keys():
+        #     try:
+        #         self.credentials[key] = self.credentials[key] # Checks if the key exists or not
+        #     except KeyError:
+        #         self.credentials[key] = ''
+        
+        # pswd_check = zxcvbn(password)
+        # if pswd_check['score'] < 3 or pswd_check["feedback"]["warning"] or pswd_check["feedback"]["suggestions"]:
+        #     raise ValidationError(f"Weak password:{pswd_check["feedback"]["warning"]} {" ".join(pswd_check["feedback"]["suggestions"])}")
+            
+        # encryptor = FernetEncryptor(password=password)
+        # self.salt = encryptor.salt
+        # self.credentials = encryptor.encrypt_dict(self.credentials)
+            
         super().save(*args, **kwargs)
     
-    def get_credential(self, credential, password=None):
-        if password is not None:
-            return self.credentials[credential]
-        else:
-            return FernetEncryption.decrypt_string(self.credentials[credential], password, self.salt)
+    def get_credentials(self, password=None):
+        # if password is None:
+        #     raise ValueError("Password is required to decrypt credentials.")
+        # else:
+        #     encryptor = FernetEncryptor(salt=self.salt, password=password)
+        #     decrypted_credentials = encryptor.decrypt_dict_keys(self.credentials)
+        #     return decrypted_credentials
+        return self.credentials
         
     def __str__(self):
         return f"{self.platform.name} - {self.user.username}"
@@ -123,70 +132,77 @@ class PostBase(models.Model):
     platform_instances = models.ManyToManyField(PlatformInstance)
     created_at = models.DateTimeField(auto_now_add=True)
     post_configs = models.JSONField(default=dict, blank=True, null=True)
+    schedule = models.DateTimeField(blank=True, null=True)
     
     class Meta:
         abstract = True
     
-    def run_action(self, action, platform_instance: PlatformInstance) -> bool:
+    def run_action(
+        self,
+        action: str,
+        platform_instance: PlatformInstance, 
+        password: str = None,
+        delay: int = 5,
+    ) -> None:
         """
         Execute an action on a platform instance
         
         Args:
-            action (str): The action to execute (such as POST_IMAGE, POST_VIDEO, etc.)
+            action (str): The action to execute
             platform_instance (PlatformInstance): The platform instance to execute the action on
+            password (str): The password to decrypt the credentials
+            delay (int): The delay between each request (in seconds)
+            max_retries (int): The maximum number of retries
+        Returns:
+            bool: True if the action was executed successfully, False otherwise
+        Raises:
+            ValueError: If the action is not defined in the platform instance
         """
         if action not in platform_instance.platform.config["ACTIONS"]:
-            raise ValueError(f"Action '{action}' not defined in platform configuration")
-        
-        def replace_keys(request, keys):
-            import json
-            request_string = json.dumps(request)
-            for key, value in keys.items():
-                request_string = request_string.replace(f"{key}",f"{value}")
-            request = json.loads(request_string)
-            return request
-        a = platform_instance.platform.config["ACTIONS"][action].copy()
-        
-        for request, expected_response_code, variable_mapping in a:
-            request = replace_keys(request, platform_instance.credentials)
-            request = replace_keys(request, self.post_configs[platform_instance.platform.name])
-            print("Request: ", request)
-            response = requests.request(
-                request["method"],
-                request["base_url"] + request["endpoint"],
-                headers=request["headers"],
-                params=request["params"],
-                json=request["payload"]
+            raise ValueError(f"Action '{action}' not defined in platform {platform_instance.platform.name}.")
+            
+        a = platform_instance.platform.config["ACTIONS"][action]
+        iteration = 1
+        for request, expected_response_code, variable_mapping in a:            
+            q = get_queue('default')
+            q.enqueue_at(
+                timezone.now()+timezone.timedelta(seconds=delay*iteration), 
+                send_request,
+                post_object=self,
+                platform_instance=platform_instance,
+                request=request,
+                expected_response_code=expected_response_code,
+                variable_mapping=variable_mapping,
+                password=password,
             )
-            # print("Response: ", response)
-            if response.status_code != expected_response_code:
-                raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post.")
+            iteration += 1
             
-            for key, value in variable_mapping.items():
-                self.post_configs[platform_instance.platform.name][value] = response.json()[key]
-            
-            self.save()
-            
-        return True
-        
-    def run_action_on_all_platforms(self, action):
+    def run_action_on_all_platforms(
+        self, 
+        action: str, 
+        password: str = None,
+        delay: int = 5,
+        ) -> None:
         """
         Execute an action on all platform instances
+        
+        Args:
+            action (str): The action to execute
+            password (str): The password to decrypt the credentials
+            delay (int): The delay between each request (in seconds)
         """
         for platform_instance in self.platform_instances.all():
-            self.run_action(action, platform_instance)
+            self.run_action(action=action, platform_instance=platform_instance, password=password, delay=delay)
     
     def save_to_aws_s3(self, file_path, file_name):
         """
         Save a file to the AWS cloud for public access
         """
-        s3_creds = dotenv_values(".env")
-
         try:
             client = boto3.client(
                 's3',
-                aws_access_key_id=s3_creds["AWS_ACCESS_KEY"],
-                aws_secret_access_key=s3_creds["AWS_SECRET_KEY"]
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_KEY")
             )
 
             client.upload_file(file_path, 'omnipost-images', file_name)
@@ -197,62 +213,206 @@ class PostBase(models.Model):
         return True
         
         
+        
+class PostText(PostBase):
+    """
+    A text post
+    """
+    text = models.TextField(blank=False)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "TEXT": self.text,
+                }
+            super().save()
+
+        
+        
 class PostImage(PostBase):
     """
     A normal post. text and image
     """
-        
     caption = models.TextField(blank=True, null=True)
     image = models.ImageField(upload_to='media/', blank=True, null=True)
     image_url = models.URLField(blank=True, null=True)
     
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        super().save()
         
         if self.post_configs == {}: 
-            for platform_instance in self.platform_instances.all():
-                self.post_configs[f"{platform_instance.platform.name}"] = {
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
                     "CAPTION": self.caption,
                     "IMAGE_URL": self.image_url
                 }
-            super().save(*args, **kwargs)
+            super().save()
         
         if self.image and self.image_url is None:
             self.save_to_aws_s3(self.image.path, self.image.name)
-            cloud_url = dotenv_values(".env")["BUCKET_URL"]
+            cloud_url = os.environ.get('BUCKET_URL')
             self.image_url = f"{cloud_url}/{self.image.name}"
-            for platform_instance in self.platform_instances.all():
-                self.post_configs[f"{platform_instance.platform.name}"]["IMAGE_URL"] = self.image_url
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
             super().save()
             
 class PostVideo(PostBase):
-    pass
+    caption = models.TextField(blank=True, null=True)
+    video = models.FileField(upload_to='media/', blank=True, null=True)
+    video_url = models.URLField(blank=True, null=True)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "VIDEO_URL": self.video_url
+                }
+            super().save()
+        
+        if self.video and self.video_url is None:
+            self.save_to_aws_s3(self.video.path, self.video.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.video_url = f"{cloud_url}/{self.video.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
+            super().save()
 
 class ShortFormVideo(PostBase):
     """
     A short video, like reels, for any platform in general
     """
-    pass
-
+    caption = models.TextField(blank=True, null=True)
+    video = models.FileField(upload_to='media/', blank=True, null=True)
+    video_url = models.URLField(blank=True, null=True)
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "VIDEO_URL": self.video_url
+                }
+            super().save()
+        
+        if self.video and self.video_url is None:
+            self.save_to_aws_s3(self.video.path, self.video.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.video_url = f"{cloud_url}/{self.video.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
+            super().save()
+            
 class Stories(PostBase):
     """
     Stories/status for any platform in general
     """
-    pass
+    media = models.FileField(upload_to='media/', blank=True, null=True)
+    media_url = models.URLField(blank=True, null=True)
+    
+    class Meta:
+        verbose_name = "Story"
+        verbose_name_plural = "Stories"
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "CAPTION": self.caption,
+                    "STORY_URL": self.video_url
+                }
+            super().save()
+        
+        if self.media and self.media_url is None:
+            self.save_to_aws_s3(self.media.path, self.media.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.media_url = f"{cloud_url}/{self.media.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["STORY_URL"] = self.media_url
+            super().save()
 
-
-class Docs(models.Model):
+class Doc(models.Model):
     """
     Documents for any platform in general
     """
-    remote_doc = models.URLField(blank=True, null=True)
+    title = models.CharField(max_length=100, blank=True, null=True)
+    youtube_video = models.URLField(blank=True, null=True)
     custom_doc = models.TextField(blank=True, null=True)
     platform = models.ForeignKey(Platform, on_delete=models.CASCADE, blank=True, null=True)
-    platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
     
-    
-class Notifications(models.Model):
+class Notification(models.Model):
     """
     Any notifications from the platform
     """
-    pass
+    platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
+    notification = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    error = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.platform_instance.platform.name} - {self.notification}"
+
+
+
+def replace_keys(request: dict, keys: dict) -> dict:
+    """
+    Replace keys in the request dictionary with values from the keys dictionary.
+    """
+    request_string = json.dumps(request)
+    for key, value in keys.items():
+        request_string = request_string.replace(f"{key}",f"{value}")
+    request = json.loads(request_string)
+    return request
+
+def send_request(
+    post_object: PostBase,
+    platform_instance: PlatformInstance,
+    request: dict,
+    expected_response_code: int,
+    variable_mapping: dict,
+    password: str,
+    ) -> bool:
+
+    request = replace_keys(request, platform_instance.get_credentials(password=password))
+    request = replace_keys(request, post_object.post_configs[platform_instance.platform.name])
+    
+    response = requests.request(
+        request["method"],
+        request["base_url"] + request["endpoint"],
+        headers=request["headers"],
+        params=request["params"],
+        json=request["payload"]
+    )
+
+    if response.status_code != expected_response_code:
+        Notification(
+            platform_instance=platform_instance,
+            user=post_object.user,
+            notification=f"Something went wrong. {response.text}",
+            error=True
+        ).save()
+        raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
+
+    for key, value in variable_mapping.items():
+        if key == 'terminal_request':
+            Notification(
+                platform_instance=platform_instance,
+                user=post_object.user,
+                notification=f"Post created successfully",
+            ).save()
+            continue
+        post_object.post_configs[platform_instance.platform.name][value] = "response.json()[key]"
+    post_object.save()
+
+    
+    return True
