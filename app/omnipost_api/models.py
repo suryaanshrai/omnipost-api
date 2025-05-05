@@ -6,6 +6,32 @@ import boto3, requests, os, json
 from zxcvbn import zxcvbn
 from django_rq import get_queue
 from omnipost_api.fernet import FernetEncryptor
+import os
+import magic
+
+
+def validate_video_file(file):
+    """
+    Validate the uploaded video file.
+    - Checks extension
+    - Checks MIME type
+    """
+    # List of valid video file extensions
+    valid_extensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.webm']
+    
+    # Get the file extension
+    ext = os.path.splitext(file.name)[1].lower()
+    
+    if ext not in valid_extensions:
+        raise ValidationError('Unsupported file extension. Please upload a video file.')
+    
+    # Check MIME type (requires python-magic package)
+    file_mime = magic.from_buffer(file.read(1024), mime=True)
+    file.seek(0)  # Reset file pointer
+    
+    if not file_mime.startswith('video/'):
+        raise ValidationError('Uploaded file is not a valid video.')
+
 
 class User(AbstractUser):
     pass
@@ -49,7 +75,8 @@ class Platform(models.Model):
     }
     ```
     
-    - A `request` must be of the following format: 
+    - A `request` must be of the following format:
+    ```
     {
         "base_url": "https://api.example.com",
         "endpoint": "/path/to/endpoint",
@@ -70,6 +97,7 @@ class Platform(models.Model):
             ...
         }
     }
+    ```
     """
     name = models.CharField(max_length=100, blank=False)
     config = models.JSONField(default=dict, blank=True, null=True)
@@ -310,16 +338,18 @@ class ShortFormVideo(PostBase):
                 self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
             super().save()
             
-class Stories(PostBase):
+
+
+class StoryImage(PostBase):
     """
-    Stories/status for any platform in general
+    Image story/status for any platform in general
     """
-    media = models.FileField(upload_to='media/', blank=True, null=True)
-    media_url = models.URLField(blank=True, null=True)
+    image = models.ImageField(upload_to='media/', blank=True, null=True)
+    image_url = models.URLField(blank=True, null=True)
     
     class Meta:
-        verbose_name = "Story"
-        verbose_name_plural = "Stories"
+        verbose_name = "Story Image"
+        verbose_name_plural = "Story Images"
     
     def save(self, *args, **kwargs):
         super().save()
@@ -327,17 +357,46 @@ class Stories(PostBase):
         if self.post_configs == {}: 
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"] = {
-                    "CAPTION": self.caption,
-                    "STORY_URL": self.video_url
+                    "IMAGE_URL": self.image_url
                 }
             super().save()
         
-        if self.media and self.media_url is None:
-            self.save_to_aws_s3(self.media.path, self.media.name)
+        if self.image and self.image_url is None:
+            self.save_to_aws_s3(self.image.path, self.image.name)
             cloud_url = os.environ.get('BUCKET_URL')
-            self.media_url = f"{cloud_url}/{self.media.name}"
+            self.image_url = f"{cloud_url}/{self.image.name}"
             for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["STORY_URL"] = self.media_url
+                self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
+            super().save()
+
+
+class StoryVideo(PostBase):
+    """
+    Video story/status for any platform in general
+    """
+    video = models.FileField(upload_to='media/', blank=True, null=True, validators=[validate_video_file])
+    video_url = models.URLField(blank=True, null=True)
+    
+    class Meta:
+        verbose_name = "Story Video"
+        verbose_name_plural = "Story Videos"
+    
+    def save(self, *args, **kwargs):
+        super().save()
+        
+        if self.post_configs == {}: 
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"] = {
+                    "VIDEO_URL": self.video_url
+                }
+            super().save()
+        
+        if self.video and self.video_url is None:
+            self.save_to_aws_s3(self.video.path, self.video.name)
+            cloud_url = os.environ.get('BUCKET_URL')
+            self.video_url = f"{cloud_url}/{self.video.name}"
+            for platform in Platform.objects.all():
+                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
             super().save()
 
 class Doc(models.Model):
@@ -383,6 +442,7 @@ def send_request(
     password: str,
     ) -> bool:
 
+    post_object.refresh_from_db()
     request = replace_keys(request, platform_instance.get_credentials(password=password))
     request = replace_keys(request, post_object.post_configs[platform_instance.platform.name])
     
@@ -394,6 +454,12 @@ def send_request(
         json=request["payload"]
     )
 
+    # with open("request.txt", "a") as f:
+    #     f.write(f"Request: {request}\n")
+    #     f.write(f"Response: {response.text}\n")
+    #     f.write(f"Status Code: {response.status_code}\n")
+    #     f.write("\n\n")
+    # print(request)
     if response.status_code != expected_response_code:
         Notification(
             platform_instance=platform_instance,
@@ -411,7 +477,7 @@ def send_request(
                 notification=f"Post created successfully",
             ).save()
             continue
-        post_object.post_configs[platform_instance.platform.name][value] = "response.json()[key]"
+        post_object.post_configs[platform_instance.platform.name][value] = response.json()[key]
     post_object.save()
 
     

@@ -100,8 +100,8 @@ class ShortFormVideoAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
 
 
-@admin.register(Stories)
-class StoriesAdmin(admin.ModelAdmin):
+@admin.register(StoryImage)
+class StoryImageAdmin(admin.ModelAdmin):
     list_display = (
         'id',
         'user',
@@ -111,6 +111,19 @@ class StoriesAdmin(admin.ModelAdmin):
     list_filter = ('user', 'created_at', 'schedule')
     raw_id_fields = ('platform_instances',)
     date_hierarchy = 'created_at'
+
+@admin.register(StoryVideo)
+class StoryVideoAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'user',
+        'created_at',
+        'schedule',
+    )
+    list_filter = ('user', 'created_at', 'schedule')
+    raw_id_fields = ('platform_instances',)
+    date_hierarchy = 'created_at'
+    
 
 
 @admin.register(Doc)

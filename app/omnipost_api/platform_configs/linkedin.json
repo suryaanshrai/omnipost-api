@@ -1,0 +1,13 @@
+{
+    "INSTANCE": {
+        "ACCESS_TOKEN": "",
+        "IG_ID": ""
+    },
+    "ACTIONS": {
+        "POST_TEXT": [],
+        "POST_IMAGE": [],
+        "POST_SHORT_FORM_VIDEO" : [],
+        "POST_VIDEO": [],
+        "POST_STORY": []
+    }
+}

@@ -46,6 +46,50 @@
                 }
             ]
         ],
+        "POST_VIDEO": [
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "video_url": "VIDEO_URL",
+                        "caption": "CAPTION"
+                    },
+                    "params" : {
+                        "media_type": "REELS"
+                    }
+                },
+                200,
+                {
+                    "id": "CONTAINER_ID"
+                }
+            ],
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media_publish",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "creation_id": "CONTAINER_ID"
+                    },
+                    "params" : {}
+                },
+                200,
+                {
+                    "id": "POST_ID",
+                    "terminal_request": true
+                }
+            ]
+        ],
         "POST_SHORT_FORM_VIDEO" : [
             [
                 {
@@ -81,9 +125,93 @@
                     "payload": {
                         "creation_id": "CONTAINER_ID"
                     },
+                    "params" : {}
+                },
+                200,
+                {
+                    "id": "POST_ID",
+                    "terminal_request": true
+                }
+            ]
+        ],
+        "POST_STORY_IMAGE": [
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "image_url": "IMAGE_URL"
+                    },
                     "params" : {
-                        "media_type": "REELS"
+                        "media_type": "STORIES"
                     }
+                },
+                200,
+                {
+                    "id": "CONTAINER_ID"
+                }
+            ],
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media_publish",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "creation_id": "CONTAINER_ID"
+                    },
+                    "params" : {}
+                },
+                200,
+                {
+                    "id": "POST_ID",
+                    "terminal_request": true
+                }
+            ]
+        ],
+        "POST_STORY_VIDEO": [
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "video_url": "VIDEO_URL"
+                    },
+                    "params" : {
+                        "media_type": "STORIES"
+                    }
+                },
+                200,
+                {
+                    "id": "CONTAINER_ID"
+                }
+            ],
+            [
+                {
+                    "base_url": "https://graph.instagram.com/v22.0",
+                    "endpoint": "/IG_ID/media_publish",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "creation_id": "CONTAINER_ID"
+                    },
+                    "params" : {}
                 },
                 200,
                 {

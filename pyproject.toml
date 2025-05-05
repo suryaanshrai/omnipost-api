@@ -20,6 +20,7 @@ zxcvbn = "^4.5.0"
 django-rq = "^3.0.0"
 djangorestframework = "^3.16.0"
 drf-spectacular = "^0.28.0"
+python-magic = "^0.4.27"
 
 [tool.poetry.group.dev]
 optional = true
