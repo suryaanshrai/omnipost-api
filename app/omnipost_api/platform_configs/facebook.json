@@ -1,0 +1,96 @@
+{
+    "INSTANCE": {
+        "ACCESS_TOKEN": "",
+        "PAGE_ID": ""
+    },
+    "ACTIONS": {
+        "POST_TEXT": [
+            [
+                {
+                    "base_url": "https://graph.facebook.com/v22.0",
+                    "endpoint": "/PAGE_ID/feed",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "message": "TEXT"
+                    },
+                    "params": {}
+                },
+                200,
+                {
+                    "id": "POST_ID"
+                }
+            ]
+        ],
+        "POST_IMAGE": [
+            [
+                {
+                    "base_url": "https://graph.facebook.com/v22.0",
+                    "endpoint": "/PAGE_ID/photos",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "caption": "CAPTION",
+                        "url": "IMAGE_URL"
+                    },
+                    "params": {}
+                },
+                200,
+                {
+                    "id": "PHOTO_ID",
+                    "post_id": "PAGE_POST_ID"
+                }
+            ]
+        ],
+        "POST_SHORT_FORM_VIDEO": [
+            [
+                {
+                    "base_url": "https://graph.facebook.com/v22.0",
+                    "endpoint": "/PAGE_ID/feed",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "message": "CAPTION",
+                        "link": "REEL_URL"
+                    },
+                    "params": {}
+                },
+                200,
+                {
+                    "id": "POST_ID"
+                }
+            ]
+        ],
+        "POST_VIDEO": [
+            [
+                {
+                    "base_url": "https://graph.facebook.com/v22.0",
+                    "endpoint": "/PAGE_ID/feed",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "message": "CAPTION",
+                        "link": "REEL_URL"
+                    },
+                    "params": {}
+                },
+                200,
+                {
+                    "id": "POST_ID"
+                }
+            ]
+        ]
+    }
+}

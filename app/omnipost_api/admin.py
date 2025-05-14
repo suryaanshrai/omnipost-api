@@ -43,8 +43,16 @@ class PlatformAdmin(admin.ModelAdmin):
 
 @admin.register(PlatformInstance)
 class PlatformInstanceAdmin(admin.ModelAdmin):
-    list_display = ('id', 'platform', 'user')
+    form = PlatformInstanceAdminForm
+    list_display = ('id','instance_name','platform', 'user')
     list_filter = ('platform', 'user')
+
+    def save_model(self, request, obj, form, change):
+        password = form.cleaned_data.get('password')
+        if password:
+            obj.save(password=password)
+        else:
+            super().save_model(request, obj, form, change)
 
 
 @admin.register(PostText)

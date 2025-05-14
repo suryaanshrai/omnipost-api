@@ -117,41 +117,41 @@ class PlatformInstance(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     credentials = models.JSONField(default=dict, blank=True, null=True)
     salt = models.BinaryField(blank=True, null=True)
-    
+    instance_name = models.CharField(max_length=100, blank=True, null=True)
     
     def save(self, password=None, *args, **kwargs):
         # Initialize credentials based on platform configs
-        # if not password:
-        #     raise ValidationError("Password is required to encrypt credentials.")
+        if not password:
+            raise ValidationError("Password is required to encrypt credentials.")
         
-        # instance_config = self.platform.config["INSTANCE"]
-        # for key in instance_config.keys():
-        #     try:
-        #         self.credentials[key] = self.credentials[key] # Checks if the key exists or not
-        #     except KeyError:
-        #         self.credentials[key] = ''
+        instance_config = self.platform.config["INSTANCE"]
+        for key in instance_config.keys():
+            try:
+                self.credentials[key] = self.credentials[key] # Checks if the key exists or not
+            except KeyError:
+                self.credentials[key] = ''
         
-        # pswd_check = zxcvbn(password)
-        # if pswd_check['score'] < 3 or pswd_check["feedback"]["warning"] or pswd_check["feedback"]["suggestions"]:
-        #     raise ValidationError(f"Weak password:{pswd_check["feedback"]["warning"]} {" ".join(pswd_check["feedback"]["suggestions"])}")
+        pswd_check = zxcvbn(password)
+        if pswd_check['score'] < 3 or pswd_check["feedback"]["warning"] or pswd_check["feedback"]["suggestions"]:
+            raise ValidationError(f"Weak password:{pswd_check["feedback"]["warning"]} {" ".join(pswd_check["feedback"]["suggestions"])}")
             
-        # encryptor = FernetEncryptor(password=password)
-        # self.salt = encryptor.salt
-        # self.credentials = encryptor.encrypt_dict(self.credentials)
-            
+        encryptor = FernetEncryptor(password=password)
+        self.salt = encryptor.salt
+        self.credentials = encryptor.encrypt_dict(self.credentials)
+        
+        if self.instance_name is None:
+            self.instance_name = f"{self.platform.name}_{self.user.username}"
         super().save(*args, **kwargs)
     
     def get_credentials(self, password=None):
-        # if password is None:
-        #     raise ValueError("Password is required to decrypt credentials.")
-        # else:
-        #     encryptor = FernetEncryptor(salt=self.salt, password=password)
-        #     decrypted_credentials = encryptor.decrypt_dict_keys(self.credentials)
-        #     return decrypted_credentials
-        return self.credentials
-        
+        if password is None:
+            raise ValueError("Password is required to decrypt credentials.")
+        else:
+            encryptor = FernetEncryptor(salt=bytes(self.salt), password=password)
+            decrypted_credentials = encryptor.decrypt_dict_keys(self.credentials)
+            return decrypted_credentials
     def __str__(self):
-        return f"{self.platform.name} - {self.user.username}"
+        return f"{self.instance_name}"
         
         
         
@@ -186,6 +186,8 @@ class PostBase(models.Model):
         Raises:
             ValueError: If the action is not defined in the platform instance
         """
+        if password is None:
+            raise ValueError("Password is required to decrypt credentials.")
         if action not in platform_instance.platform.config["ACTIONS"]:
             raise ValueError(f"Action '{action}' not defined in platform {platform_instance.platform.name}.")
             
@@ -204,6 +206,14 @@ class PostBase(models.Model):
                 password=password,
             )
             iteration += 1
+            # send_request(
+            #     post_object=self,
+            #     platform_instance=platform_instance,
+            #     request=request,
+            #     expected_response_code=expected_response_code,
+            #     variable_mapping=variable_mapping,
+            #     password=password,
+            # )
             
     def run_action_on_all_platforms(
         self, 
@@ -257,6 +267,10 @@ class PostText(PostBase):
                     "TEXT": self.text,
                 }
             super().save()
+    
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Text Post on {platform_instances} - {self.text}"
 
         
         
@@ -286,6 +300,10 @@ class PostImage(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
             super().save()
+    
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Image Post on {platform_instances} - {self.caption}"
             
 class PostVideo(PostBase):
     caption = models.TextField(blank=True, null=True)
@@ -310,6 +328,10 @@ class PostVideo(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
             super().save()
+        
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Video Post on {platform_instances} - {self.caption}"
 
 class ShortFormVideo(PostBase):
     """
@@ -337,6 +359,10 @@ class ShortFormVideo(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
             super().save()
+        
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Short Form Video Post on {platform_instances} - {self.caption}"
             
 
 
@@ -368,6 +394,10 @@ class StoryImage(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
             super().save()
+    
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Image Story on {platform_instances}"
 
 
 class StoryVideo(PostBase):
@@ -398,6 +428,10 @@ class StoryVideo(PostBase):
             for platform in Platform.objects.all():
                 self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
             super().save()
+
+    def __str__(self):
+        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
+        return f"Video Story on {platform_instances}"
 
 class Doc(models.Model):
     """
@@ -464,7 +498,7 @@ def send_request(
         Notification(
             platform_instance=platform_instance,
             user=post_object.user,
-            notification=f"Something went wrong. {response.text}",
+            notification=f"Something went wrong while posting {post_object} on {platform_instance}. {response.text}",
             error=True
         ).save()
         raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
