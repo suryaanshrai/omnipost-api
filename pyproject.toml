@@ -21,6 +21,9 @@ django-rq = "^3.0.0"
 djangorestframework = "^3.16.0"
 drf-spectacular = "^0.28.0"
 python-magic = "^0.4.27"
+dj-rest-auth = "^7.0.1"
+django-allauth = "^65.8.0"
+django-cors-headers = "^4.7.0"
 
 [tool.poetry.group.dev]
 optional = true

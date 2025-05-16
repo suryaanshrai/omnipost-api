@@ -33,7 +33,8 @@
                 },
                 201,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -78,7 +79,8 @@
                 },
                 201,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -113,7 +115,8 @@
                 },
                 201,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -148,7 +151,8 @@
                 },
                 201,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ]

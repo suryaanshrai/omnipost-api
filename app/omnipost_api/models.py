@@ -1,3 +1,5 @@
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
@@ -161,7 +163,8 @@ class PostBase(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     post_configs = models.JSONField(default=dict, blank=True, null=True)
     schedule = models.DateTimeField(blank=True, null=True)
-    
+    published = models.BooleanField(default=False)
+
     class Meta:
         abstract = True
     
@@ -193,10 +196,14 @@ class PostBase(models.Model):
             
         a = platform_instance.platform.config["ACTIONS"][action]
         iteration = 1
+        if self.schedule:
+            q_time = self.schedule
+        else:
+            q_time = timezone.now()
         for request, expected_response_code, variable_mapping in a:            
             q = get_queue('default')
             q.enqueue_at(
-                timezone.now()+timezone.timedelta(seconds=delay*iteration), 
+                q_time+timezone.timedelta(seconds=delay*iteration), 
                 send_request,
                 post_object=self,
                 platform_instance=platform_instance,
@@ -449,6 +456,23 @@ class Notification(models.Model):
     platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
     notification = models.TextField()
+    
+    # Use content types to create a generic foreign key
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, blank=True, null=True)
+    object_id = models.PositiveIntegerField(blank=True, null=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    # Post type for quick filtering
+    post_type = models.CharField(max_length=20, blank=True, null=True, 
+                                 choices=[
+                                    ('TEXT', 'Text Post'),
+                                    ('IMAGE', 'Image Post'),
+                                    ('VIDEO', 'Video Post'), 
+                                    ('SHORT_FORM_VIDEO', 'Short Form Video'),
+                                    ('STORY_IMAGE', 'Story Image'),
+                                    ('STORY_VIDEO', 'Story Video')
+                                 ])
+    
     created_at = models.DateTimeField(auto_now_add=True)
     error = models.BooleanField(default=False)
     
@@ -494,12 +518,14 @@ def send_request(
     #     f.write(f"Status Code: {response.status_code}\n")
     #     f.write("\n\n")
     # print(request)
+    
     if response.status_code != expected_response_code:
         Notification(
             platform_instance=platform_instance,
             user=post_object.user,
             notification=f"Something went wrong while posting {post_object} on {platform_instance}. {response.text}",
-            error=True
+            error=True,
+            content_object=post_object,
         ).save()
         raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
 
@@ -509,7 +535,9 @@ def send_request(
                 platform_instance=platform_instance,
                 user=post_object.user,
                 notification=f"Post created successfully",
+                content_object=post_object,
             ).save()
+            post_object.published = True
             continue
         post_object.post_configs[platform_instance.platform.name][value] = response.json()[key]
     post_object.save()

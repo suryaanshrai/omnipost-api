@@ -21,7 +21,8 @@
                 },
                 200,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -44,7 +45,8 @@
                 200,
                 {
                     "id": "PHOTO_ID",
-                    "post_id": "PAGE_POST_ID"
+                    "post_id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -66,7 +68,8 @@
                 },
                 200,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ],
@@ -88,7 +91,8 @@
                 },
                 200,
                 {
-                    "id": "POST_ID"
+                    "id": "POST_ID",
+                    "terminal_request":true
                 }
             ]
         ]
