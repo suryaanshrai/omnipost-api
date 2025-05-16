@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'omnipost_api',
     'django_rq',
-    'django_extensions',
+    # 'django_extensions',
     'rest_framework',
     'rest_framework.authtoken',
     'dj_rest_auth',
