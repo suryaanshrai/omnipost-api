@@ -37,14 +37,22 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Platform)
 class PlatformAdmin(admin.ModelAdmin):
-    list_display = ('name',)
+    list_display = ('id','name',)
     search_fields = ('name',)
 
 
 @admin.register(PlatformInstance)
 class PlatformInstanceAdmin(admin.ModelAdmin):
-    list_display = ('id', 'platform', 'user')
+    form = PlatformInstanceAdminForm
+    list_display = ('id','instance_name','platform', 'user')
     list_filter = ('platform', 'user')
+
+    def save_model(self, request, obj, form, change):
+        password = form.cleaned_data.get('password')
+        if password:
+            obj.save(password=password)
+        else:
+            super().save_model(request, obj, form, change)
 
 
 @admin.register(PostText)
@@ -100,8 +108,8 @@ class ShortFormVideoAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
 
 
-@admin.register(Stories)
-class StoriesAdmin(admin.ModelAdmin):
+@admin.register(StoryImage)
+class StoryImageAdmin(admin.ModelAdmin):
     list_display = (
         'id',
         'user',
@@ -111,6 +119,19 @@ class StoriesAdmin(admin.ModelAdmin):
     list_filter = ('user', 'created_at', 'schedule')
     raw_id_fields = ('platform_instances',)
     date_hierarchy = 'created_at'
+
+@admin.register(StoryVideo)
+class StoryVideoAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'user',
+        'created_at',
+        'schedule',
+    )
+    list_filter = ('user', 'created_at', 'schedule')
+    raw_id_fields = ('platform_instances',)
+    date_hierarchy = 'created_at'
+    
 
 
 @admin.register(Doc)

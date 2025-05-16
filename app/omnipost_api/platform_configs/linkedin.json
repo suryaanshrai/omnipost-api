@@ -1,0 +1,160 @@
+{
+    "INSTANCE": {
+        "ACCESS_TOKEN": "",
+        "AUTHOR_URN": ""
+    },
+    "ACTIONS": {
+        "POST_TEXT": [
+            [
+                {
+                    "base_url": "https://api.linkedin.com/v2",
+                    "endpoint": "/ugcPosts",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "author": "AUTHOR_URN",
+                        "lifecycleState": "PUBLISHED",
+                        "specificContent": {
+                            "com.linkedin.ugc.ShareContent": {
+                                "shareCommentary": {
+                                    "text": "TEXT"
+                                },
+                                "shareMediaCategory": "NONE"
+                            }
+                        },
+                        "visibility": {
+                            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                        }
+                    },
+                    "params": {}
+                },
+                201,
+                {
+                    "id": "POST_ID",
+                    "terminal_request":true
+                }
+            ]
+        ],
+        "POST_IMAGE": [
+            [
+                {
+                    "base_url": "https://api.linkedin.com/v2",
+                    "endpoint": "/ugcPosts",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer ACCESS_TOKEN",
+                        "Content-Type": "application/json"
+                    },
+                    "payload": {
+                        "author": "urn:li:person:3ECyZnRkx5",
+                        "lifecycleState": "PUBLISHED",
+                        "specificContent": {
+                            "com.linkedin.ugc.ShareContent": {
+                                "shareCommentary": {
+                                    "text": "CAPTION"
+                                },
+                                "shareMediaCategory": "ARTICLE",
+                                "media": [
+                                    {
+                                        "status": "READY",
+                                        "description": {
+                                            "text": ""
+                                        },
+                                        "originalUrl": "https://omnipost-images.s3.ap-south-1.amazonaws.com/media/open_me_OWVT1qY.mp4",
+                                        "title": {
+                                            "text": "Open Media"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "visibility": {
+                            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                        }
+                    },
+                    "params": {}
+                },
+                201,
+                {
+                    "id": "POST_ID",
+                    "terminal_request":true
+                }
+            ]
+        ],
+        "POST_SHORT_FORM_VIDEO": [
+            [
+                {
+                    "author": "urn:li:person:3ECyZnRkx5",
+                    "lifecycleState": "PUBLISHED",
+                    "specificContent": {
+                        "com.linkedin.ugc.ShareContent": {
+                            "shareCommentary": {
+                                "text": "CAPTION"
+                            },
+                            "shareMediaCategory": "ARTICLE",
+                            "media": [
+                                {
+                                    "status": "READY",
+                                    "description": {
+                                        "text": ""
+                                    },
+                                    "originalUrl": "https://omnipost-images.s3.ap-south-1.amazonaws.com/media/open_me_OWVT1qY.mp4",
+                                    "title": {
+                                        "text": "Open Media"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "visibility": {
+                        "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                    }
+                },
+                201,
+                {
+                    "id": "POST_ID",
+                    "terminal_request":true
+                }
+            ]
+        ],
+        "POST_VIDEO": [
+            [
+                {
+                    "author": "urn:li:person:3ECyZnRkx5",
+                    "lifecycleState": "PUBLISHED",
+                    "specificContent": {
+                        "com.linkedin.ugc.ShareContent": {
+                            "shareCommentary": {
+                                "text": "CAPTION"
+                            },
+                            "shareMediaCategory": "ARTICLE",
+                            "media": [
+                                {
+                                    "status": "READY",
+                                    "description": {
+                                        "text": ""
+                                    },
+                                    "originalUrl": "https://omnipost-images.s3.ap-south-1.amazonaws.com/media/open_me_OWVT1qY.mp4",
+                                    "title": {
+                                        "text": "Open Media"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "visibility": {
+                        "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                    }
+                },
+                201,
+                {
+                    "id": "POST_ID",
+                    "terminal_request":true
+                }
+            ]
+        ]
+    }
+}

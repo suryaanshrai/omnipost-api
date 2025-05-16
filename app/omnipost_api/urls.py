@@ -1,22 +1,24 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
+from . import views as omnipost_views
 
-# Create a router and register our viewsets with it.
+
 router = DefaultRouter()
-router.register(r'users', views.UserViewSet, basename='user')
-router.register(r'platforms', views.PlatformViewSet, basename='platform')
-router.register(r'platform-instances', views.PlatformInstanceViewSet, basename='platforminstance')
-router.register(r'posts/text', views.PostTextViewSet, basename='posttext')
-router.register(r'posts/image', views.PostImageViewSet, basename='postimage')
-router.register(r'posts/video', views.PostVideoViewSet, basename='postvideo')
-router.register(r'posts/short-form-video', views.ShortFormVideoViewSet, basename='shortformvideo')
-router.register(r'posts/stories', views.StoriesViewSet, basename='stories')
-router.register(r'docs', views.DocViewSet, basename='doc')
-router.register(r'notifications', views.NotificationViewSet, basename='notification')
 
+
+app_name = 'omnipost_api'
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('publish/', omnipost_views.PublishApiView.as_view(), name='publish'),
+    path('platform_instance/', omnipost_views.CreatePlatformInstanceView.as_view(), name='platform_instance'),
+    path('post/', omnipost_views.CreatePostView.as_view(), name='post'),
+    path('drafts/', omnipost_views.DraftsListView.as_view(), name='drafts'),
+    path('notifications', omnipost_views.ListNotificationsView.as_view(), name='notifications'),
+
+    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+    path('auth/', include('dj_rest_auth.urls')),
+    path('auth/registration/', include('dj_rest_auth.registration.urls'))
+
 ]
 

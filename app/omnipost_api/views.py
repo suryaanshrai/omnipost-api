@@ -1,256 +1,297 @@
-# views.py
-from rest_framework import viewsets, permissions, status, mixins
-from rest_framework.decorators import action
+from django.contrib.contenttypes.models import ContentType
+import datetime
+from rest_framework import viewsets
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
+
 from .models import (
-    Platform, PlatformInstance, PostText, PostImage, PostVideo,
-    ShortFormVideo, Stories, Doc, Notification
+    User,
+    Platform,
+    PlatformInstance,
+    PostText,
+    PostImage,
+    PostVideo,
+    ShortFormVideo,
+    StoryImage,
+    StoryVideo,
+    Notification
 )
+
+# Remove commented code along with the serializers
+
 from .serializers import (
-    UserSerializer, PlatformSerializer, PlatformInstanceSerializer,
-    PostTextSerializer, PostImageSerializer, PostVideoSerializer,
-    ShortFormVideoSerializer, StoriesSerializer, DocSerializer,
-    NotificationSerializer, PostActionSerializer
+    UserSerializer,
+    PlatformSerializer,
+    PlatformInstanceSerializer,
+    PostTextSerializer,
+    PostImageSerializer,
+    PostVideoSerializer,
+    ShortFormVideoSerializer,
+    StoryImageSerializer,
+    StoryVideoSerializer
 )
-from django.shortcuts import get_object_or_404
-# from django.core.exceptions import ValidationError as DjangoValidationError # If needed for password handling
 
-User = get_user_model()
 
-# --- Permissions ---
-class IsOwnerOrReadOnly(permissions.BasePermission):
+class PublishApiView(APIView):
     """
-    Custom permission to only allow owners of an object to edit it.
-    Assumes the model instance has a `user` attribute.
+    API endpoint that allows actions to be run.
     """
-    def has_object_permission(self, request, view, obj):
-        # Read permissions are allowed to any request,
-        # so we'll always allow GET, HEAD or OPTIONS requests.
-        if request.method in permissions.SAFE_METHODS:
-            return True
-
-        # Write permissions are only allowed to the owner of the object.
-        # Handle cases where obj is User itself
-        if isinstance(obj, User):
-            return obj == request.user
-        return obj.user == request.user
-
-class IsAdminOrReadOnly(permissions.BasePermission):
+    def post(self, request):        
+        platform_instance_ids = request.data.get('platform_instance_ids')
+        post_type = request.data.get('post_type')
+        post_id = request.data.get('post_id')
+        password = request.data.get('password')
+        delay = 5
+        match post_type:
+            case 'TEXT':
+                post = PostText.objects.get(id=post_id)
+                action = "POST_TEXT"
+            case 'IMAGE':
+                post = PostImage.objects.get(id=post_id)
+                delay = 10
+                action = "POST_IMAGE"
+            case 'VIDEO':
+                post = PostVideo.objects.get(id=post_id)
+                delay = 30
+                action = "POST_VIDEO"
+            case 'SHORT_FORM_VIDEO':
+                post = ShortFormVideo.objects.get(id=post_id)
+                delay = 30
+                action = "POST_SHORT_FORM_VIDEO"
+            case 'STORY_IMAGE':
+                post = StoryImage.objects.get(id=post_id)
+                delay = 10
+                action = "POST_STORY_IMAGE"
+            case 'STORY_VIDEO':
+                post = StoryVideo.objects.get(id=post_id)
+                delay = 30
+                action = "POST_STORY_VIDEO"
+            case _:
+                return Response({"error": "Invalid post type"}, status=400)
+        
+        if post.user != request.user:
+            return Response({"error": "You do not have permission to perform this action"}, status=403)
+        
+        for platform_instance_id in platform_instance_ids:
+            platform_instance = PlatformInstance.objects.get(id=platform_instance_id)
+            post.run_action(action=action,platform_instance=platform_instance, password=password, delay=delay)
+        return Response({"status": "Action executed"}, status=200)
+    
+class CreatePlatformInstanceView(APIView):
     """
-    Custom permission to only allow admin users to edit objects.
+    API endpoint that allows platform instances to be created.
     """
-    def has_permission(self, request, view):
-        # Read permissions are allowed to any request
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        # Write permissions are only allowed to admin users.
-        return request.user and request.user.is_staff
+    def get(self, request):
+        # Return a list of platforms whose instances can be created along with their required configuration
+        platforms = PlatformInstance.objects.filter(user=request.user)
+        return Response ([{"id":platform.id,"platform":platform.platform.name, "instance_name":platform.instance_name,} for platform in platforms], status=200)
+    
+    def post(self, request):
+        # Create a new platform instance
+        print(request.data.keys())
+        platform_id = int(request.data['platform_id'])
+        user = User.objects.get(id=request.user.id)
+        credentials = request.data.get('credentials')
+        instance_name = request.data.get('instance_name')
+        password = request.data.get('password')
+        
+        try:
+            platform = Platform.objects.get(id=platform_id)
+        except Platform.DoesNotExist:
+            return Response({"error": "Platform does not exist"}, status=400)
+        
+        platform_instance = PlatformInstance(
+            platform=platform,
+            user=user,
+            credentials=credentials,
+            instance_name=instance_name
+        )
+        try:
+            platform_instance.save(password=password)
+        except Exception as e:
+            print(e)
+            return Response({"error": f"Failed to create platform instance {e} "}, status=400)
+        
+        return Response({"status": "Platform instance created", "instance_id": platform_instance.id}, status=201)
 
-# --- ViewSets ---
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
+class CreatePostView(APIView):
     """
-    API endpoint that allows users to be viewed.
-    Read-only access.
+    API endpoint that allows posts to be created.
     """
-    queryset = User.objects.all().order_by('-date_joined')
-    serializer_class = UserSerializer
-    permission_classes = [permissions.IsAdminUser] # Only admin can list all users
+    def post(self, request):
+        # Create a new post
+        post_type = request.data.get('post_type')
+        content = request.data.get('content')
+        
+        try:
+            media = request.FILES.get('media')
+        except KeyError:
+            media = None
+        
+        try:
+            schedule = request.data.get('schedule')
+            if schedule:
+                # Convert string to datetime object
+                print(schedule)
+                schedule = datetime.datetime.fromisoformat(schedule.replace('Z', '+00:00'))
+                print(schedule)
 
-    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
-    def me(self, request):
-        """
-        Return the currently authenticated user's information.
-        """
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+                if schedule < datetime.datetime.now(datetime.timezone.utc):
+                    return Response({"error": "Schedule time cannot be in the past"}, status=400)
+        except KeyError:
+            schedule = None
+        
 
+        if not request.user.is_authenticated:
+            return Response({"error": "User not authenticated"}, status=403)
+        
+        
+        post = None
+        match post_type:
+            case 'TEXT':
+                post = PostText(user=request.user, text=content, schedule=schedule)
+            case 'IMAGE':
+                post = PostImage(user=request.user, caption=content, image=media, schedule=schedule)
+            case 'VIDEO':
+                post = PostVideo(user=request.user, caption=content, video=media, schedule=schedule)
+            case 'SHORT_FORM_VIDEO':
+                post = ShortFormVideo(user=request.user, caprion=content, video=media, schedule=schedule)
+            case 'STORY_IMAGE':
+                post = StoryImage(user=request.user,image=media, schedule=schedule)
+            case 'STORY_VIDEO':
+                post = StoryVideo(user=request.user,video=media, schedule=schedule)
+            case _:
+                return Response({"error": "Invalid post type"}, status=400)
+        
+        post.save()
+        
+        return Response({"status": "Post created", "post_id": post.id}, status=201)
+    
+    
+    def get(self, request):
+    # API endpoint to list all posts that has been published by the user
+    
+        # Return a list of all published posts from all post types for this user
+        user = User.objects.get(id=request.user.id)
+        
+        # Query each model type
+        text_posts = PostText.objects.filter(user=user, published=True).values()
+        image_posts = PostImage.objects.filter(user=user, published=True).values()
+        video_posts = PostVideo.objects.filter(user=user, published=True).values()
+        short_form_videos = ShortFormVideo.objects.filter(user=user, published=True).values()
+        story_images = StoryImage.objects.filter(user=user, published=True).values()
+        story_videos = StoryVideo.objects.filter(user=user, published=True).values()
+        
+        # Add a 'post_type' field to each result
+        for post in text_posts:
+            post['post_type'] = 'TEXT'
+        for post in image_posts:
+            post['post_type'] = 'IMAGE'
+        for post in video_posts:
+            post['post_type'] = 'VIDEO'
+        for post in short_form_videos:
+            post['post_type'] = 'SHORT_FORM_VIDEO'
+        for post in story_images:
+            post['post_type'] = 'STORY_IMAGE'
+        for post in story_videos:
+            post['post_type'] = 'STORY_VIDEO'
+        
+        # Combine all results
+        all_posts = list(text_posts) + list(image_posts) + list(video_posts) + \
+                    list(short_form_videos) + list(story_images) + list(story_videos)
+        
+        # Sort by creation date (newest first)
+        all_posts.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return Response(all_posts, status=200)
+    
 
-class PlatformViewSet(viewsets.ModelViewSet):
+class DraftsListView(APIView):
     """
-    API endpoint for managing Platforms (e.g., Twitter, Facebook).
-    Configuration details are included.
-    Typically managed by admins.
+    API endpoint that allows drafts to be listed.
     """
-    queryset = Platform.objects.all()
-    serializer_class = PlatformSerializer
-    permission_classes = [IsAdminOrReadOnly] # Only admins can create/edit platforms
+    def get(self, request):
+        # Return a list of all drafts from all post types for this user
+        user = request.user
+        
+        # Query each model type
+        text_posts = PostText.objects.filter(user=user, published=False).values()
+        image_posts = PostImage.objects.filter(user=user, published=False).values()
+        video_posts = PostVideo.objects.filter(user=user, published=False).values()
+        short_form_videos = ShortFormVideo.objects.filter(user=user, published=False).values()
+        story_images = StoryImage.objects.filter(user=user, published=False).values()
+        story_videos = StoryVideo.objects.filter(user=user, published=False).values()
+        
+        # Add a 'post_type' field to each result
+        for post in text_posts:
+            post['post_type'] = 'TEXT'
+        for post in image_posts:
+            post['post_type'] = 'IMAGE'
+        for post in video_posts:
+            post['post_type'] = 'VIDEO'
+        for post in short_form_videos:
+            post['post_type'] = 'SHORT_FORM_VIDEO'
+        for post in story_images:
+            post['post_type'] = 'STORY_IMAGE'
+        for post in story_videos:
+            post['post_type'] = 'STORY_VIDEO'
+        
+        # Combine all results
+        all_posts = list(text_posts) + list(image_posts) + list(video_posts) + \
+                    list(short_form_videos) + list(story_images) + list(story_videos)
+        
+        # Sort by creation date (newest first)
+        all_posts.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return Response(all_posts, status=200)
 
 
-class PlatformInstanceViewSet(viewsets.ModelViewSet):
+class ListNotificationsView(APIView):
     """
-    API endpoint for managing Platform Instances (user's specific accounts).
-    Users can manage their own instances.
+    API endpoint that allows notifications to be listed.
     """
-    serializer_class = PlatformInstanceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    def get(self, request):
+        # Return a list of all notifications for this user
+        user = User.objects.get(id=request.user.id)
+        post_id = int(request.query_params.get('post_id')) # Use request.query_params for GET requests
+        post_type_str = request.query_params.get('post_type') # Use request.query_params
 
-    def get_queryset(self):
-        """
-        This view should only return instances belonging to the currently authenticated user.
-        """
-        return PlatformInstance.objects.filter(user=self.request.user)
-
-    def perform_create(self, serializer):
-        """
-        Associate the instance with the current user on creation.
-        Handle password for encryption if the model logic was active.
-        """
-        # password = serializer.validated_data.pop('password', None) # Extract password if field exists
-        # instance = serializer.save(user=self.request.user)
-        # try:
-        #     instance.save(password=password) # Pass password to model's save method
-        # except DjangoValidationError as e:
-        #     # If model's save raises validation error (e.g., weak password)
-        #     raise serializers.ValidationError(e.messages)
-
-        # Call save without password as model logic is commented out
-        serializer.save(user=self.request.user)
-
-    def perform_update(self, serializer):
-        """
-        Handle updates, potentially re-encrypting credentials if password is provided.
-        """
-        # password = serializer.validated_data.pop('password', None) # Extract password if field exists
-        # instance = serializer.save()
-        # try:
-        #     # Only call save with password if credentials or password were part of the update
-        #     if 'credentials' in serializer.validated_data or password:
-        #          instance.save(password=password)
-        #     else:
-        #          instance.save() # Save other changes
-        # except DjangoValidationError as e:
-        #     raise serializers.ValidationError(e.messages)
-
-        # Call save without password as model logic is commented out
-        serializer.save()
-
-
-# --- Base Post ViewSet ---
-class BasePostViewSet(viewsets.ModelViewSet):
-    """
-    Abstract Base ViewSet for common Post model functionality.
-    Handles user association and filtering.
-    """
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
-
-    # Define serializer_class in subclasses
-    # Define model in subclasses queryset
-
-    def get_queryset(self):
-        """
-        Filter posts to only show those belonging to the current user.
-        Must be implemented by subclasses by defining `self.model`.
-        """
-        if not hasattr(self, 'model') or not self.model:
-             raise NotImplementedError("Subclasses must define 'self.model'")
-        return self.model.objects.filter(user=self.request.user).order_by('-created_at')
-
-    def perform_create(self, serializer):
-        """
-        Associate the post with the current user.
-        The serializer handles validation of platform_instances ownership.
-        """
-        serializer.save(user=self.request.user)
-
-    @action(detail=True, methods=['post'], serializer_class=PostActionSerializer)
-    def run_action(self, request, pk=None):
-        """
-        Custom action to trigger a specific action (e.g., 'POST_TEXT') on all
-        associated platform instances for this post.
-        Requires password if credentials need decryption (based on model logic).
-        """
-        post = self.get_object() # Gets the specific post instance (ensures ownership via get_queryset/permissions)
-        action_serializer = PostActionSerializer(data=request.data)
-
-        if action_serializer.is_valid():
-            action_name = action_serializer.validated_data['action']
-            password = action_serializer.validated_data.get('password') # Optional password
-            delay = action_serializer.validated_data.get('delay', 5)
-
-            try:
-                # Check if the action is valid for *all* associated platforms before starting
-                # (More robust check might involve iterating platforms and their configs)
-                # This is a basic check; model's run_action handles detailed validation per instance.
-                post.run_action_on_all_platforms(
-                    action=action_name,
-                    password=password, # Pass password if needed by model's get_credentials
-                    delay=delay
-                )
-                return Response(
-                    {'status': f'Action "{action_name}" queued for all platforms.'},
-                    status=status.HTTP_202_ACCEPTED # 202 Accepted as it's likely asynchronous
-                )
-            except ValueError as e:
-                # Catch errors from run_action (e.g., action not defined, decryption failure)
-                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            except Exception as e:
-                # Catch unexpected errors
-                # Log the error properly in a real application
-                print(f"Error running action {action_name} for post {post.id}: {e}")
-                return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not post_id:
+            return Response({"error": "Post ID is required"}, status=400)
+        if not post_type_str:
+            return Response({"error": "Post type is required"}, status=400)
+        
+        # Validate post type and get the model class
+        model_class = None
+        if post_type_str == 'TEXT':
+            model_class = PostText
+        elif post_type_str == 'IMAGE':
+            model_class = PostImage
+        elif post_type_str == 'VIDEO':
+            model_class = PostVideo
+        elif post_type_str == 'SHORT_FORM_VIDEO':
+            model_class = ShortFormVideo
+        elif post_type_str == 'STORY_IMAGE':
+            model_class = StoryImage
+        elif post_type_str == 'STORY_VIDEO':
+            model_class = StoryVideo
         else:
-            return Response(action_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid post type"}, status=400)
 
+        print(request.query_params,model_class)
+        try:
+            # Get the ContentType for the model
+            content_type_obj = ContentType.objects.get_for_model(model_class)
+        except ContentType.DoesNotExist:
+            return Response({"error": "Could not find content type for the given post type"}, status=500)
 
-# --- Concrete Post ViewSets ---
+        print(user, content_type_obj)
+        # Query notifications based on user, object_id, and content_type
+        notifications = Notification.objects.filter(
+            user=user, 
+            object_id=post_id,
+            content_type=content_type_obj
+        ).values() 
 
-class PostTextViewSet(BasePostViewSet):
-    """ API endpoint for Text Posts. """
-    serializer_class = PostTextSerializer
-    model = PostText # Define the model for the base class queryset
-
-class PostImageViewSet(BasePostViewSet):
-    """ API endpoint for Image Posts. """
-    serializer_class = PostImageSerializer
-    model = PostImage
-
-class PostVideoViewSet(BasePostViewSet):
-    """ API endpoint for Video Posts. """
-    serializer_class = PostVideoSerializer
-    model = PostVideo
-
-class ShortFormVideoViewSet(BasePostViewSet):
-    """ API endpoint for Short Form Video Posts. """
-    serializer_class = ShortFormVideoSerializer
-    model = ShortFormVideo
-
-class StoriesViewSet(BasePostViewSet):
-    """ API endpoint for Stories Posts. """
-    serializer_class = StoriesSerializer
-    model = Stories
-
-
-# --- Other ViewSets ---
-
-class DocViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for managing Documentation links/content.
-    Accessible by authenticated users, editable by admins.
-    """
-    queryset = Doc.objects.all()
-    serializer_class = DocSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAdminOrReadOnly] # Allow read, admin edit
-
-
-class NotificationViewSet(mixins.ListModelMixin,
-                          mixins.RetrieveModelMixin,
-                          viewsets.GenericViewSet):
-    """
-    API endpoint for viewing Notifications. Read-only.
-    Users can only see their own notifications.
-    """
-    serializer_class = NotificationSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        """
-        Filter notifications to only show those belonging to the current user.
-        """
-        user = self.request.user
-        # Notifications can be linked directly to user OR via platform_instance owned by user
-        return Notification.objects.filter(
-            models.Q(user=user) | models.Q(platform_instance__user=user)
-        ).distinct().order_by('-created_at')
-
+        return Response(list(notifications), status=200)
