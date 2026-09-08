@@ -39,6 +39,11 @@ jobs:
       DB_PASSWORD: root
       REDIS_HOST: localhost
       REDIS_PASSWORD: ""
+      # mypy's django-stubs plugin needs `app.settings` importable, which
+      # needs /app (this repo's app/ dir) on sys.path. pytest gets this for
+      # free from pyproject.toml's [tool.pytest.ini_options] pythonpath —
+      # mypy has no equivalent, so it's set explicitly here.
+      PYTHONPATH: app
     steps:
       - uses: actions/checkout@v4
 
