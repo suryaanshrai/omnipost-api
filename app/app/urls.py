@@ -15,11 +15,16 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from omnipost_api import metrics_exporter
 
+from . import health
 
 urlpatterns = [
+    path('healthz', health.healthz, name='healthz'),
+    path('readyz', health.readyz, name='readyz'),
+    path('metrics', metrics_exporter.metrics_view, name='prometheus-metrics'),
     path('admin/', admin.site.urls),
     path('django-rq/', include('django_rq.urls')),
     path('', include('omnipost_api.urls')),

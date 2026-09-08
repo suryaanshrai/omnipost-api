@@ -24,6 +24,11 @@ python-magic = "^0.4.27"
 dj-rest-auth = "^7.0.1"
 django-allauth = "^65.8.0"
 django-cors-headers = "^4.7.0"
+pyyaml = "^6.0.2"
+anthropic = "^0.40.0"
+django-storages = "^1.14.4"
+sentry-sdk = "^2.19.0"
+prometheus-client = "^0.21.1"
 
 [tool.poetry.group.dev]
 optional = true
@@ -32,6 +37,37 @@ optional = true
 django-extensions = "^3.2.3"
 pygraphviz = "^1.14"
 jupyterlab = "^4.3.6"
+pytest = "^8.3.4"
+pytest-django = "^4.9.0"
+factory-boy = "^3.3.1"
+responses = "^0.25.3"
+fakeredis = "^2.26.2"
+ruff = "^0.8.4"
+mypy = "^1.14.0"
+django-stubs = "^5.1.1"
+types-requests = "^2.32.0"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "app.settings"
+pythonpath = ["app"]
+testpaths = ["app"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+plugins = ["mypy_django_plugin.main"]
+
+[tool.django-stubs]
+django_settings_module = "app.settings"
 
 [build-system]
 requires = ["poetry-core"]

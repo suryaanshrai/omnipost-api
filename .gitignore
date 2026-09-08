@@ -6,3 +6,9 @@ docker-compose.yml
 media/
 .export_env.sh
 .creds
+# runtime logs should never be committed
+server_logs
+worker_logs
+*.log
+staticfiles/
+mediafiles/

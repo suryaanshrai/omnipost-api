@@ -1,0 +1,38 @@
+# Telegram via the Bot API — the user creates a bot with @BotFather (one
+# message, gets a token back) and adds it to their channel/group, no OAuth
+# flow exists for this API at all.
+slug: telegram
+display_name: Telegram
+
+capabilities:
+  max_text_length: 4096
+  post_kinds: [text]
+  rate_limits:
+    - max_requests: 30
+      per_seconds: 1
+      scope: channel
+
+instance:
+  - BOT_TOKEN
+  - CHAT_ID
+
+actions:
+  publish_text:
+    steps:
+      - request:
+          method: POST
+          base_url: "https://api.telegram.org"
+          endpoint: "/bot{{ BOT_TOKEN }}/sendMessage"
+          headers:
+            Content-Type: application/json
+          payload:
+            chat_id: "{{ CHAT_ID }}"
+            text: "{{ TEXT }}"
+        expected_status: [200]
+        error_map:
+          429: RATE_LIMITED
+          401: AUTH_EXPIRED
+          403: AUTH_EXPIRED
+        response_mapping:
+          result.message_id: REMOTE_ID
+        terminal: true

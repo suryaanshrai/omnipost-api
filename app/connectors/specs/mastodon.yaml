@@ -1,0 +1,45 @@
+# Mastodon: a single-request REST API, no media upload in this pass (that
+# needs a multipart step — see the DeclarativeConnector docstring for why
+# that's a hand-written-connector job, not this one). Each user can be on a
+# different instance domain, so INSTANCE_DOMAIN is a per-channel credential
+# field, not a fixed base_url.
+slug: mastodon
+display_name: Mastodon
+
+capabilities:
+  max_text_length: 500
+  supports_alt_text: true
+  supports_threads: true
+  post_kinds: [text]
+  rate_limits:
+    - max_requests: 300
+      per_seconds: 300
+      scope: channel
+
+# Credential field names this connector needs. OAuth token exchange for
+# Mastodon (per-instance dynamic app registration) is implemented in
+# connectors/platforms/mastodon_oauth.py and writes these fields.
+instance:
+  - ACCESS_TOKEN
+  - INSTANCE_DOMAIN
+
+actions:
+  publish_text:
+    steps:
+      - request:
+          method: POST
+          base_url: "https://{{ INSTANCE_DOMAIN }}"
+          endpoint: "/api/v1/statuses"
+          headers:
+            Authorization: "Bearer {{ ACCESS_TOKEN }}"
+          payload:
+            status: "{{ TEXT }}"
+        expected_status: [200]
+        error_map:
+          429: RATE_LIMITED
+          401: AUTH_EXPIRED
+          422: PERMANENT
+        response_mapping:
+          id: REMOTE_ID
+          url: PERMALINK
+        terminal: true

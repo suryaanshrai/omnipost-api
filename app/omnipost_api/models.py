@@ -1,546 +1,624 @@
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
-from django.db import models
+"""OmniPost's data model.
+
+Replaces the old schema entirely (six near-duplicate post tables — PostText,
+PostImage, PostVideo, ShortFormVideo, StoryImage, StoryVideo — each with a
+copy-pasted save() method; Platform.config as a hand-edited JSON blob;
+PlatformInstance's password-derived credential encryption). There was no
+production data to migrate (confirmed with the project owner), so this is a
+clean break rather than a data migration.
+
+The new shape is Organization -> Workspace -> Channel, with Post/PostTarget
+splitting "the idea" from "what actually goes to each platform" — the
+composer can now build one post with five platform-specific variants instead
+of cross-posting identical text everywhere, which the old schema had no place
+to put (post_configs existed but the UI never wrote to it).
+"""
+
+from __future__ import annotations
+
 from django.contrib.auth.models import AbstractUser
-from django.core.exceptions import ValidationError
-from django.utils import timezone
-import boto3, requests, os, json
-from zxcvbn import zxcvbn
-from django_rq import get_queue
-from omnipost_api.fernet import FernetEncryptor
-import os
-import magic
+from django.db import models
 
-
-def validate_video_file(file):
-    """
-    Validate the uploaded video file.
-    - Checks extension
-    - Checks MIME type
-    """
-    # List of valid video file extensions
-    valid_extensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.webm']
-    
-    # Get the file extension
-    ext = os.path.splitext(file.name)[1].lower()
-    
-    if ext not in valid_extensions:
-        raise ValidationError('Unsupported file extension. Please upload a video file.')
-    
-    # Check MIME type (requires python-magic package)
-    file_mime = magic.from_buffer(file.read(1024), mime=True)
-    file.seek(0)  # Reset file pointer
-    
-    if not file_mime.startswith('video/'):
-        raise ValidationError('Uploaded file is not a valid video.')
+from . import crypto
 
 
 class User(AbstractUser):
     pass
 
 
-class Platform(models.Model):
-    """
-    ## Configuration for a social media platform, eg. the details needed to connect to the platform's API.
-    
-    - Every platform should be configured in the following manner:
-    ```python
-    config = {
-        "INSTANCE": {
-            "key1": "value1",
-            "key2": "value2",
-            ...
-        },
-        "ACTIONS": {
-            "POST_IMAGE": [
-                [request1, expected_response_code1, variable_mapping1],
-                [request2, expected_response_code2, variable_mapping2],
-                ...
-            ],
-            "POST_VIDEO": [
-                [request1, expected_response_code1, variable_mapping1],
-                ...
-            ],
-            "POST_TEXT": [
-                [request1, expected_response_code1, variable_mapping1],
-                ...
-            ],
-            "POST_SHORT_FORM_VIDEO": [
-                [request1, expected_response_code1, variable_mapping1],
-                ...
-            ],
-            "POST_STORIES": [
-                [request1, expected_response_code1, variable_mapping1],
-                ...
-            ],
-        }
-    }
-    ```
-    
-    - A `request` must be of the following format:
-    ```
-    {
-        "base_url": "https://api.example.com",
-        "endpoint": "/path/to/endpoint",
-        "method": "POST",
-        "headers": {
-            "Authorization": "Bearer ACCESS_TOKEN",
-            "Content-Type": "application/json",
-            ...
-        },
-        "params": {
-            "key1": "value1",
-            "key2": "value2",
-            ...
-        },
-        "payload": {
-            "key1": "value1",
-            "key2": "value2",
-            ...
-        }
-    }
-    ```
-    """
-    name = models.CharField(max_length=100, blank=False)
-    config = models.JSONField(default=dict, blank=True, null=True)
-    # The configs field would contain the configuration details needed to connect to the platform's API
-    
-    
-    def __str__(self):
+class Organization(models.Model):
+    """The billing boundary. A solo signup gets one auto-created Organization
+    with one Workspace; an agency adds more Workspaces under the same org."""
+
+    name = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    PLAN_FREE = "free"
+    PLAN_PRO = "pro"
+    PLAN_AGENCY = "agency"
+    PLAN_CHOICES = [(PLAN_FREE, "Free"), (PLAN_PRO, "Pro"), (PLAN_AGENCY, "Agency")]
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default=PLAN_FREE)
+
+    def __str__(self) -> str:
         return self.name
-    
-    
-    
-class PlatformInstance(models.Model):
-    """
-    An instance of a social media platform, e.g. a specific Twitter account
-    """
-    platform = models.ForeignKey(Platform, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    credentials = models.JSONField(default=dict, blank=True, null=True)
-    salt = models.BinaryField(blank=True, null=True)
-    instance_name = models.CharField(max_length=100, blank=True, null=True)
-    
-    def save(self, password=None, *args, **kwargs):
-        # Initialize credentials based on platform configs
-        if not password:
-            raise ValidationError("Password is required to encrypt credentials.")
-        
-        instance_config = self.platform.config["INSTANCE"]
-        for key in instance_config.keys():
-            try:
-                self.credentials[key] = self.credentials[key] # Checks if the key exists or not
-            except KeyError:
-                self.credentials[key] = ''
-        
-        pswd_check = zxcvbn(password)
-        if pswd_check['score'] < 3 or pswd_check["feedback"]["warning"] or pswd_check["feedback"]["suggestions"]:
-            raise ValidationError(f"Weak password:{pswd_check["feedback"]["warning"]} {" ".join(pswd_check["feedback"]["suggestions"])}")
-            
-        encryptor = FernetEncryptor(password=password)
-        self.salt = encryptor.salt
-        self.credentials = encryptor.encrypt_dict(self.credentials)
-        
-        if self.instance_name is None:
-            self.instance_name = f"{self.platform.name}_{self.user.username}"
-        super().save(*args, **kwargs)
-    
-    def get_credentials(self, password=None):
-        if password is None:
-            raise ValueError("Password is required to decrypt credentials.")
-        else:
-            encryptor = FernetEncryptor(salt=bytes(self.salt), password=password)
-            decrypted_credentials = encryptor.decrypt_dict_keys(self.credentials)
-            return decrypted_credentials
-    def __str__(self):
-        return f"{self.instance_name}"
-        
-        
-        
-class PostBase(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    platform_instances = models.ManyToManyField(PlatformInstance)
+
+
+class Workspace(models.Model):
+    """A brand or client. Owns channels, media, and posts. Solo users never
+    see the org/workspace distinction until they add a second workspace —
+    see omnipost_api.services.provisioning.create_personal_workspace."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="workspaces")
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True)
+    # IANA name (e.g. "America/New_York"). Drives default scheduling display
+    # and queue-slot resolution (Phase 5) — the old system had one global
+    # TIME_ZONE = 'Asia/Kolkata' and no per-user concept at all.
+    timezone = models.CharField(max_length=64, default="UTC")
+    # Off by default: most solo users publish straight from draft. Agencies
+    # with a client_reviewer membership role flip this on to require
+    # draft -> in_review -> approved before a post can be scheduled/queued.
+    approval_workflow_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    post_configs = models.JSONField(default=dict, blank=True, null=True)
-    schedule = models.DateTimeField(blank=True, null=True)
-    published = models.BooleanField(default=False)
 
-    class Meta:
-        abstract = True
-    
-    def run_action(
-        self,
-        action: str,
-        platform_instance: PlatformInstance, 
-        password: str = None,
-        delay: int = 5,
-    ) -> None:
-        """
-        Execute an action on a platform instance
-        
-        Args:
-            action (str): The action to execute
-            platform_instance (PlatformInstance): The platform instance to execute the action on
-            password (str): The password to decrypt the credentials
-            delay (int): The delay between each request (in seconds)
-            max_retries (int): The maximum number of retries
-        Returns:
-            bool: True if the action was executed successfully, False otherwise
-        Raises:
-            ValueError: If the action is not defined in the platform instance
-        """
-        if password is None:
-            raise ValueError("Password is required to decrypt credentials.")
-        if action not in platform_instance.platform.config["ACTIONS"]:
-            raise ValueError(f"Action '{action}' not defined in platform {platform_instance.platform.name}.")
-            
-        a = platform_instance.platform.config["ACTIONS"][action]
-        iteration = 1
-        if self.schedule:
-            q_time = self.schedule
-        else:
-            q_time = timezone.now()
-        for request, expected_response_code, variable_mapping in a:            
-            q = get_queue('default')
-            q.enqueue_at(
-                q_time+timezone.timedelta(seconds=delay*iteration), 
-                send_request,
-                post_object=self,
-                platform_instance=platform_instance,
-                request=request,
-                expected_response_code=expected_response_code,
-                variable_mapping=variable_mapping,
-                password=password,
-            )
-            iteration += 1
-            # send_request(
-            #     post_object=self,
-            #     platform_instance=platform_instance,
-            #     request=request,
-            #     expected_response_code=expected_response_code,
-            #     variable_mapping=variable_mapping,
-            #     password=password,
-            # )
-            
-    def run_action_on_all_platforms(
-        self, 
-        action: str, 
-        password: str = None,
-        delay: int = 5,
-        ) -> None:
-        """
-        Execute an action on all platform instances
-        
-        Args:
-            action (str): The action to execute
-            password (str): The password to decrypt the credentials
-            delay (int): The delay between each request (in seconds)
-        """
-        for platform_instance in self.platform_instances.all():
-            self.run_action(action=action, platform_instance=platform_instance, password=password, delay=delay)
-    
-    def save_to_aws_s3(self, file_path, file_name):
-        """
-        Save a file to the AWS cloud for public access
-        """
-        try:
-            client = boto3.client(
-                's3',
-                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY"),
-                aws_secret_access_key=os.environ.get("AWS_SECRET_KEY")
-            )
-
-            client.upload_file(file_path, 'omnipost-images', file_name)
-        
-        except Exception as e:
-            raise ValueError(f"Failed to upload file to cloud: {e}")
-
-        return True
-        
-        
-        
-class PostText(PostBase):
-    """
-    A text post
-    """
-    text = models.TextField(blank=False)
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "TEXT": self.text,
-                }
-            super().save()
-    
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Text Post on {platform_instances} - {self.text}"
-
-        
-        
-class PostImage(PostBase):
-    """
-    A normal post. text and image
-    """
-    caption = models.TextField(blank=True, null=True)
-    image = models.ImageField(upload_to='media/', blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "CAPTION": self.caption,
-                    "IMAGE_URL": self.image_url
-                }
-            super().save()
-        
-        if self.image and self.image_url is None:
-            self.save_to_aws_s3(self.image.path, self.image.name)
-            cloud_url = os.environ.get('BUCKET_URL')
-            self.image_url = f"{cloud_url}/{self.image.name}"
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
-            super().save()
-    
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Image Post on {platform_instances} - {self.caption}"
-            
-class PostVideo(PostBase):
-    caption = models.TextField(blank=True, null=True)
-    video = models.FileField(upload_to='media/', blank=True, null=True)
-    video_url = models.URLField(blank=True, null=True)
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "CAPTION": self.caption,
-                    "VIDEO_URL": self.video_url
-                }
-            super().save()
-        
-        if self.video and self.video_url is None:
-            self.save_to_aws_s3(self.video.path, self.video.name)
-            cloud_url = os.environ.get('BUCKET_URL')
-            self.video_url = f"{cloud_url}/{self.video.name}"
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
-            super().save()
-        
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Video Post on {platform_instances} - {self.caption}"
-
-class ShortFormVideo(PostBase):
-    """
-    A short video, like reels, for any platform in general
-    """
-    caption = models.TextField(blank=True, null=True)
-    video = models.FileField(upload_to='media/', blank=True, null=True)
-    video_url = models.URLField(blank=True, null=True)
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "CAPTION": self.caption,
-                    "VIDEO_URL": self.video_url
-                }
-            super().save()
-        
-        if self.video and self.video_url is None:
-            self.save_to_aws_s3(self.video.path, self.video.name)
-            cloud_url = os.environ.get('BUCKET_URL')
-            self.video_url = f"{cloud_url}/{self.video.name}"
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
-            super().save()
-        
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Short Form Video Post on {platform_instances} - {self.caption}"
-            
+    def __str__(self) -> str:
+        return self.name
 
 
-class StoryImage(PostBase):
-    """
-    Image story/status for any platform in general
-    """
-    image = models.ImageField(upload_to='media/', blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
-    
-    class Meta:
-        verbose_name = "Story Image"
-        verbose_name_plural = "Story Images"
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "IMAGE_URL": self.image_url
-                }
-            super().save()
-        
-        if self.image and self.image_url is None:
-            self.save_to_aws_s3(self.image.path, self.image.name)
-            cloud_url = os.environ.get('BUCKET_URL')
-            self.image_url = f"{cloud_url}/{self.image.name}"
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["IMAGE_URL"] = self.image_url
-            super().save()
-    
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Image Story on {platform_instances}"
+class Membership(models.Model):
+    ROLE_OWNER = "owner"
+    ROLE_ADMIN = "admin"
+    ROLE_EDITOR = "editor"
+    ROLE_CONTRIBUTOR = "contributor"
+    ROLE_VIEWER = "viewer"
+    ROLE_CLIENT_REVIEWER = "client_reviewer"
+    ROLE_CHOICES = [
+        (ROLE_OWNER, "Owner"),
+        (ROLE_ADMIN, "Admin"),
+        (ROLE_EDITOR, "Editor"),
+        (ROLE_CONTRIBUTOR, "Contributor"),
+        (ROLE_VIEWER, "Viewer"),
+        (ROLE_CLIENT_REVIEWER, "Client reviewer"),
+    ]
 
-
-class StoryVideo(PostBase):
-    """
-    Video story/status for any platform in general
-    """
-    video = models.FileField(upload_to='media/', blank=True, null=True, validators=[validate_video_file])
-    video_url = models.URLField(blank=True, null=True)
-    
-    class Meta:
-        verbose_name = "Story Video"
-        verbose_name_plural = "Story Videos"
-    
-    def save(self, *args, **kwargs):
-        super().save()
-        
-        if self.post_configs == {}: 
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"] = {
-                    "VIDEO_URL": self.video_url
-                }
-            super().save()
-        
-        if self.video and self.video_url is None:
-            self.save_to_aws_s3(self.video.path, self.video.name)
-            cloud_url = os.environ.get('BUCKET_URL')
-            self.video_url = f"{cloud_url}/{self.video.name}"
-            for platform in Platform.objects.all():
-                self.post_configs[f"{platform.name}"]["VIDEO_URL"] = self.video_url
-            super().save()
-
-    def __str__(self):
-        platform_instances = ', '.join([str(instance) for instance in self.platform_instances.all()])
-        return f"Video Story on {platform_instances}"
-
-class Doc(models.Model):
-    """
-    Documents for any platform in general
-    """
-    title = models.CharField(max_length=100, blank=True, null=True)
-    youtube_video = models.URLField(blank=True, null=True)
-    custom_doc = models.TextField(blank=True, null=True)
-    platform = models.ForeignKey(Platform, on_delete=models.CASCADE, blank=True, null=True)
-    
-class Notification(models.Model):
-    """
-    Any notifications from the platform
-    """
-    platform_instance = models.ForeignKey(PlatformInstance, on_delete=models.CASCADE, blank=True, null=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
-    notification = models.TextField()
-    
-    # Use content types to create a generic foreign key
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, blank=True, null=True)
-    object_id = models.PositiveIntegerField(blank=True, null=True)
-    content_object = GenericForeignKey('content_type', 'object_id')
-    
-    # Post type for quick filtering
-    post_type = models.CharField(max_length=20, blank=True, null=True, 
-                                 choices=[
-                                    ('TEXT', 'Text Post'),
-                                    ('IMAGE', 'Image Post'),
-                                    ('VIDEO', 'Video Post'), 
-                                    ('SHORT_FORM_VIDEO', 'Short Form Video'),
-                                    ('STORY_IMAGE', 'Story Image'),
-                                    ('STORY_VIDEO', 'Story Video')
-                                 ])
-    
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="memberships")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_EDITOR)
     created_at = models.DateTimeField(auto_now_add=True)
-    error = models.BooleanField(default=False)
-    
-    def __str__(self):
-        return f"{self.platform_instance.platform.name} - {self.notification}"
+
+    class Meta:
+        unique_together = [("workspace", "user")]
+
+    def __str__(self) -> str:
+        return f"{self.user} @ {self.workspace} ({self.role})"
 
 
+class Channel(models.Model):
+    """One connected platform account. Replaces PlatformInstance — the
+    connector-specific request logic that used to live in Platform.config
+    (a hand-edited JSONField) now lives in code under app/connectors/, keyed
+    by `connector_slug`."""
 
-def replace_keys(request: dict, keys: dict) -> dict:
-    """
-    Replace keys in the request dictionary with values from the keys dictionary.
-    """
-    request_string = json.dumps(request)
-    for key, value in keys.items():
-        request_string = request_string.replace(f"{key}",f"{value}")
-    request = json.loads(request_string)
-    return request
+    HEALTH_HEALTHY = "healthy"
+    HEALTH_NEEDS_ATTENTION = "needs_attention"
+    HEALTH_BROKEN = "broken"
+    HEALTH_CHOICES = [
+        (HEALTH_HEALTHY, "Healthy"),
+        (HEALTH_NEEDS_ATTENTION, "Needs attention"),
+        (HEALTH_BROKEN, "Broken"),
+    ]
 
-def send_request(
-    post_object: PostBase,
-    platform_instance: PlatformInstance,
-    request: dict,
-    expected_response_code: int,
-    variable_mapping: dict,
-    password: str,
-    ) -> bool:
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="channels")
+    connector_slug = models.CharField(max_length=50)
+    display_name = models.CharField(max_length=200)
+    external_account_id = models.CharField(max_length=200, blank=True, default="")
+    health = models.CharField(max_length=20, choices=HEALTH_CHOICES, default=HEALTH_HEALTHY)
+    health_detail = models.CharField(max_length=500, blank=True, default="")
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    refresh_token_expires_at = models.DateTimeField(null=True, blank=True)
+    # IANA name, or blank to inherit workspace.timezone — see effective_timezone().
+    # A client-facing channel (e.g. a UK client's Instagram) often needs its
+    # own local queue-slot times even when the workspace itself is elsewhere.
+    timezone = models.CharField(max_length=64, blank=True, default="")
+    # Minimum spacing enforced by queueing.next_open_slot_run_at between any
+    # two non-canceled posts on this channel, regardless of which slots they
+    # land in — guards against two slots that are legal individually but too
+    # close together (e.g. a 9am and a 9:05am slot on a busy day).
+    min_gap_minutes = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    post_object.refresh_from_db()
-    request = replace_keys(request, platform_instance.get_credentials(password=password))
-    request = replace_keys(request, post_object.post_configs[platform_instance.platform.name])
-    
-    response = requests.request(
-        request["method"],
-        request["base_url"] + request["endpoint"],
-        headers=request["headers"],
-        params=request["params"],
-        json=request["payload"]
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "connector_slug"])]
+
+    def __str__(self) -> str:
+        return f"{self.display_name} ({self.connector_slug})"
+
+    def effective_timezone(self) -> str:
+        return self.timezone or self.workspace.timezone or "UTC"
+
+    def _aad(self) -> bytes:
+        # Binds this channel's credentials to this row: a Credential blob
+        # copied onto another channel fails to decrypt instead of silently
+        # decrypting under the wrong context.
+        return f"channel:{self.pk}".encode()
+
+    def get_credentials(self) -> dict[str, str]:
+        credential = getattr(self, "credential", None)
+        if credential is None:
+            return {}
+        return crypto.decrypt_dict(credential.encrypted_values, aad=self._aad())
+
+    def set_credentials(self, values: dict[str, str]) -> Credential:
+        encrypted = crypto.encrypt_dict(values, aad=self._aad())
+        credential, _ = Credential.objects.update_or_create(
+            channel=self, defaults={"encrypted_values": encrypted}
+        )
+        return credential
+
+
+class Credential(models.Model):
+    """Envelope-encrypted secret bag for one Channel. See crypto.py — no user
+    password is involved anywhere in this path, which is what makes
+    unattended scheduled publishing possible at all."""
+
+    channel = models.OneToOneField(Channel, on_delete=models.CASCADE, related_name="credential")
+    encrypted_values = models.JSONField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Credential for {self.channel}"
+
+
+class MediaAsset(models.Model):
+    KIND_IMAGE = "image"
+    KIND_VIDEO = "video"
+    KIND_GIF = "gif"
+    KIND_CHOICES = [(KIND_IMAGE, "Image"), (KIND_VIDEO, "Video"), (KIND_GIF, "GIF")]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="media_assets")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    file = models.FileField(upload_to="media/originals/%Y/%m/")
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES)
+    mime_type = models.CharField(max_length=100, blank=True, default="")
+    size_bytes = models.BigIntegerField(null=True, blank=True)
+    width = models.IntegerField(null=True, blank=True)
+    height = models.IntegerField(null=True, blank=True)
+    duration_s = models.FloatField(null=True, blank=True)
+    alt_text = models.CharField(max_length=1000, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.kind}:{self.file.name}"
+
+    @property
+    def aspect_ratio(self) -> str | None:
+        if not self.width or not self.height:
+            return None
+        from math import gcd
+
+        divisor = gcd(self.width, self.height)
+        return f"{self.width // divisor}:{self.height // divisor}"
+
+
+class MediaRendition(models.Model):
+    """A per-platform derived variant of a MediaAsset (e.g. a 9:16 crop for
+    Reels), cached by (asset, profile) so the same source is never
+    re-transcoded twice for the same target shape."""
+
+    asset = models.ForeignKey(MediaAsset, on_delete=models.CASCADE, related_name="renditions")
+    profile = models.CharField(max_length=50)  # e.g. "reels_9x16", "shorts_9x16"
+    file = models.FileField(upload_to="media/renditions/%Y/%m/")
+    width = models.IntegerField(null=True, blank=True)
+    height = models.IntegerField(null=True, blank=True)
+    duration_s = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("asset", "profile")]
+
+
+class Post(models.Model):
+    """The idea. What actually gets sent to each platform lives on
+    PostTarget, which can override text/media/format per channel."""
+
+    STATUS_DRAFT = "draft"
+    STATUS_IN_REVIEW = "in_review"
+    STATUS_APPROVED = "approved"
+    STATUS_SCHEDULED = "scheduled"
+    STATUS_PUBLISHING = "publishing"
+    STATUS_PUBLISHED = "published"
+    STATUS_FAILED = "failed"
+    STATUS_CANCELED = "canceled"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_IN_REVIEW, "In review"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_SCHEDULED, "Scheduled"),
+        (STATUS_PUBLISHING, "Publishing"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELED, "Canceled"),
+    ]
+
+    KIND_CHOICES = [
+        ("text", "Text"),
+        ("image", "Image"),
+        ("video", "Video"),
+        ("story", "Story"),
+        ("short_video", "Short video"),
+    ]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="posts")
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default="text")
+    base_text = models.TextField(blank=True, default="")
+    base_media = models.ManyToManyField(MediaAsset, blank=True, related_name="posts")
+    link = models.URLField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    ai_generated = models.BooleanField(default=False)
+    voice_profile = models.ForeignKey(
+        "VoiceProfile", on_delete=models.SET_NULL, null=True, blank=True, related_name="posts"
     )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    # with open("request.txt", "a") as f:
-    #     f.write(f"Request: {request}\n")
-    #     f.write(f"Response: {response.text}\n")
-    #     f.write(f"Status Code: {response.status_code}\n")
-    #     f.write("\n\n")
-    # print(request)
-    
-    if response.status_code != expected_response_code:
-        Notification(
-            platform_instance=platform_instance,
-            user=post_object.user,
-            notification=f"Something went wrong while posting {post_object} on {platform_instance}. {response.text}",
-            error=True,
-            content_object=post_object,
-        ).save()
-        raise ValueError(f"Unexpected response code: {response.status_code}. Failed to create post. {response.text}")
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "status"])]
 
-    for key, value in variable_mapping.items():
-        if key == 'terminal_request':
-            Notification(
-                platform_instance=platform_instance,
-                user=post_object.user,
-                notification=f"Post created successfully",
-                content_object=post_object,
-            ).save()
-            post_object.published = True
-            continue
-        post_object.post_configs[platform_instance.platform.name][value] = response.json()[key]
-    post_object.save()
+    def __str__(self) -> str:
+        return f"Post #{self.pk} ({self.status})"
 
-    
-    return True
+
+class PostTarget(models.Model):
+    """One channel's copy of a Post: its own content override, format,
+    schedule, and publish state."""
+
+    STATUS_PENDING = "pending"
+    STATUS_SCHEDULED = "scheduled"
+    STATUS_PUBLISHING = "publishing"
+    STATUS_PUBLISHED = "published"
+    STATUS_FAILED = "failed"
+    STATUS_CANCELED = "canceled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SCHEDULED, "Scheduled"),
+        (STATUS_PUBLISHING, "Publishing"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELED, "Canceled"),
+    ]
+
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="targets")
+    channel = models.ForeignKey(Channel, on_delete=models.CASCADE, related_name="post_targets")
+    format = models.CharField(max_length=20, choices=Post.KIND_CHOICES, blank=True, default="")
+    text_override = models.TextField(blank=True, default="")
+    media = models.ManyToManyField(MediaAsset, blank=True, related_name="post_targets")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    # Resolved final send time for THIS channel — may differ from Post.scheduled_for
+    # once per-channel timezones / queue slots (Phase 5) are applied.
+    run_at = models.DateTimeField(null=True, blank=True)
+    remote_id = models.CharField(max_length=200, blank=True, default="")
+    permalink = models.URLField(blank=True, default="")
+    # Set once, at the moment publisher._mark_succeeded records success — unlike
+    # updated_at (bumped by any save), this is a stable timestamp for metrics
+    # polling windows and best-time-to-post derivation (Phase 7).
+    published_at = models.DateTimeField(null=True, blank=True)
+    # Bumped only on an explicit user retry/reschedule of an already-terminal
+    # target, never by the job engine's own automatic retries — see
+    # jobs/publisher.py. Keeps the idempotency key stable across automatic
+    # retries of the same logical attempt.
+    epoch = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["channel", "status", "run_at"])]
+
+    def __str__(self) -> str:
+        return f"PostTarget #{self.pk} -> {self.channel} ({self.status})"
+
+    def effective_text(self) -> str:
+        return self.text_override or self.post.base_text
+
+    def effective_media(self) -> list[MediaAsset]:
+        overridden = list(self.media.all())
+        return overridden if overridden else list(self.post.base_media.all())
+
+    def effective_format(self) -> str:
+        return self.format or self.post.kind
+
+    def idempotency_key(self) -> str:
+        return f"post-target:{self.pk}:epoch:{self.epoch}"
+
+
+class PostTargetPart(models.Model):
+    """One post in a thread / one delayed drip step under a single
+    PostTarget. Only meaningful for a connector whose Capabilities declare
+    supports_threads=True (enforced by Connector.validate() in
+    connectors/base.py) — a target with no parts publishes as a single post
+    exactly as before. A carousel doesn't need this: multiple media items on
+    one PostTarget already publish together as one post."""
+
+    post_target = models.ForeignKey(PostTarget, on_delete=models.CASCADE, related_name="parts")
+    sequence = models.PositiveIntegerField()
+    text = models.TextField(blank=True, default="")
+    media = models.ManyToManyField(MediaAsset, blank=True, related_name="post_target_parts")
+    # Delay, after this part is posted, before the next part is posted.
+    # Ignored on the last part.
+    delay_after_s = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = [("post_target", "sequence")]
+        ordering = ["sequence"]
+
+    def __str__(self) -> str:
+        return f"Part {self.sequence} of {self.post_target}"
+
+
+class PublishAttempt(models.Model):
+    """One try (and its retries within the same epoch) at publishing a
+    PostTarget. `state_step`/`state_data` hold a connector's resumable
+    PublishState between re-invocations — see app/connectors/base.py and
+    jobs/publisher.py. Replaces the old fixed-delay-per-step RQ scheduling,
+    where every step fired on schedule whether or not the previous one
+    succeeded."""
+
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_WAITING = "waiting"  # backing off before a retry
+    STATUS_SUCCEEDED = "succeeded"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_WAITING, "Waiting"),
+        (STATUS_SUCCEEDED, "Succeeded"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    post_target = models.ForeignKey(PostTarget, on_delete=models.CASCADE, related_name="attempts")
+    epoch = models.PositiveIntegerField(default=1)
+    attempt_number = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    error_class = models.CharField(max_length=30, blank=True, default="")
+    # Safe-for-display detail only (ConnectorError.safe_detail). Raw upstream
+    # response bodies (which can contain tokens) are never stored here — they
+    # go to logs, which are secret-scrubbed by app.logging_filters.
+    error_detail = models.TextField(blank=True, default="")
+    state_step = models.CharField(max_length=100, blank=True, default="start")
+    state_data = models.JSONField(default=dict, blank=True)
+    run_at = models.DateTimeField()
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "run_at"])]
+        unique_together = [("post_target", "epoch", "attempt_number")]
+
+    def __str__(self) -> str:
+        return f"Attempt #{self.attempt_number} for {self.post_target} ({self.status})"
+
+
+class PostMetric(models.Model):
+    """One snapshot of a published PostTarget's engagement, as reported by
+    Connector.fetch_metrics (Phase 7). Append-only rather than a single
+    mutable row on PostTarget: keeps a light history (impressions/likes grow
+    over a post's life) and makes "latest metric" a simple ordering query
+    instead of a field that gets silently overwritten.
+
+    likes/comments/shares/impressions are the cross-platform-normalized
+    subset every connector maps its own field names onto; anything a
+    connector reports beyond that lives in `raw` unmodified."""
+
+    post_target = models.ForeignKey(PostTarget, on_delete=models.CASCADE, related_name="metrics")
+    impressions = models.PositiveIntegerField(null=True, blank=True)
+    likes = models.PositiveIntegerField(null=True, blank=True)
+    comments = models.PositiveIntegerField(null=True, blank=True)
+    shares = models.PositiveIntegerField(null=True, blank=True)
+    raw = models.JSONField(default=dict, blank=True)
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["post_target", "fetched_at"])]
+        ordering = ["-fetched_at"]
+
+    def __str__(self) -> str:
+        return f"Metrics for {self.post_target} @ {self.fetched_at}"
+
+    def engagement_total(self) -> int:
+        return (self.likes or 0) + (self.comments or 0) + (self.shares or 0)
+
+
+class VoiceProfile(models.Model):
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="voice_profiles")
+    name = models.CharField(max_length=200)
+    style_summary = models.TextField(blank=True, default="")
+    example_posts = models.JSONField(default=list, blank=True)
+    is_default = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.workspace})"
+
+
+class ProviderKey(models.Model):
+    """A BYOK LLM/image-provider API key. Same envelope encryption as channel
+    Credentials — see crypto.py."""
+
+    PROVIDER_ANTHROPIC = "anthropic"
+    PROVIDER_OPENAI = "openai"
+    PROVIDER_GEMINI = "gemini"
+    PROVIDER_OPENROUTER = "openrouter"
+    PROVIDER_CHOICES = [
+        (PROVIDER_ANTHROPIC, "Anthropic"),
+        (PROVIDER_OPENAI, "OpenAI"),
+        (PROVIDER_GEMINI, "Gemini"),
+        (PROVIDER_OPENROUTER, "OpenRouter"),
+    ]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="provider_keys")
+    provider = models.CharField(max_length=30, choices=PROVIDER_CHOICES)
+    encrypted_key = models.JSONField()
+    label = models.CharField(max_length=100, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    last_validated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("workspace", "provider")]
+
+    def _aad(self) -> bytes:
+        return f"provider-key:{self.pk}".encode()
+
+    def get_key(self) -> str:
+        return crypto.decrypt(self.encrypted_key, aad=self._aad())
+
+    def __str__(self) -> str:
+        return f"{self.provider} key for {self.workspace}"
+
+
+class AppCredential(models.Model):
+    """A workspace's own OAuth app (client_id/client_secret), registered
+    directly with a gated platform by the workspace owner. Exists for
+    connectors whose `requires_own_app` is True (LinkedIn, X) — platforms
+    where a single OmniPost-managed app either can't clear the platform's
+    review tier (LinkedIn's Community Management API needs a registered
+    legal entity) or would make OmniPost eat every customer's per-post API
+    cost (X charges the calling app per post, more per post with a link).
+    Same envelope encryption as channel Credentials and ProviderKey."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="app_credentials")
+    connector_slug = models.CharField(max_length=50)
+    client_id = models.CharField(max_length=300)
+    encrypted_client_secret = models.JSONField()
+    label = models.CharField(max_length=100, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("workspace", "connector_slug")]
+
+    def _aad(self) -> bytes:
+        return f"app-credential:{self.pk}".encode()
+
+    def get_client_secret(self) -> str:
+        return crypto.decrypt(self.encrypted_client_secret, aad=self._aad())
+
+    def __str__(self) -> str:
+        return f"{self.connector_slug} app for {self.workspace}"
+
+
+class UsageCounter(models.Model):
+    """AI quota tracking with reserve -> commit -> release so a failed
+    provider call never burns a user's free-tier allotment. `period` is
+    either "lifetime" (the free-tier trial allotment) or a "YYYY-MM" string
+    for a recurring paid-tier quota."""
+
+    FEATURE_AI_TEXT = "ai_text_generation"
+    FEATURE_AI_IMAGE = "ai_image_generation"
+    FEATURE_CHOICES = [(FEATURE_AI_TEXT, "AI text generation"), (FEATURE_AI_IMAGE, "AI image generation")]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="usage_counters")
+    feature = models.CharField(max_length=50, choices=FEATURE_CHOICES)
+    period = models.CharField(max_length=20, default="lifetime")
+    reserved = models.PositiveIntegerField(default=0)
+    committed = models.PositiveIntegerField(default=0)
+    limit = models.PositiveIntegerField(null=True, blank=True)  # null = unlimited
+
+    class Meta:
+        unique_together = [("workspace", "feature", "period")]
+
+    def __str__(self) -> str:
+        return f"{self.feature}[{self.period}] for {self.workspace}: {self.committed}/{self.limit}"
+
+
+class AuditEvent(models.Model):
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, null=True, blank=True, related_name="audit_events"
+    )
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    verb = models.CharField(max_length=100)
+    target_type = models.CharField(max_length=50, blank=True, default="")
+    target_id = models.CharField(max_length=50, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.verb} by {self.actor} at {self.created_at}"
+
+
+class QueueSlot(models.Model):
+    """A recurring weekly posting slot for a channel. 'Add to queue' fills
+    the next open slot instead of requiring an exact date/time — the old
+    composer had a single DateTimePicker and nothing else."""
+
+    channel = models.ForeignKey(Channel, on_delete=models.CASCADE, related_name="queue_slots")
+    weekday = models.PositiveSmallIntegerField()  # 0 = Monday .. 6 = Sunday
+    time_of_day = models.TimeField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = [("channel", "weekday", "time_of_day")]
+        ordering = ["weekday", "time_of_day"]
+
+    def __str__(self) -> str:
+        return f"{self.channel} slot: day {self.weekday} @ {self.time_of_day}"
+
+
+class BlackoutWindow(models.Model):
+    """An absolute UTC time range during which queueing.next_open_slot_run_at
+    will never resolve a run_at — e.g. a client's announced product launch
+    window, or a holiday freeze. `channel=None` applies to every channel in
+    the workspace; a channel-specific window narrows it to just that one."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="blackout_windows")
+    channel = models.ForeignKey(
+        Channel, on_delete=models.CASCADE, null=True, blank=True, related_name="blackout_windows"
+    )
+    label = models.CharField(max_length=200, blank=True, default="")
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "starts_at", "ends_at"])]
+        ordering = ["starts_at"]
+
+    def __str__(self) -> str:
+        return self.label or f"Blackout {self.starts_at} - {self.ends_at}"
+
+
+class RecurrenceRule(models.Model):
+    """An evergreen post: fires on a fixed interval, each time creating a new
+    Post+PostTarget from the next text variant in rotation (round-robin, so
+    the same three variants don't read as an obvious copy-paste loop) and
+    scheduling it immediately. Recognizably the same "Postgres is truth"
+    pattern as PublishAttempt/PostTarget.run_at — next_run_at lives here, not
+    in Redis, so a flushed queue never loses track of when the next
+    occurrence is due. See jobs/recurrence.py."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="recurrence_rules")
+    channel = models.ForeignKey(Channel, on_delete=models.CASCADE, related_name="recurrence_rules")
+    kind = models.CharField(max_length=20, choices=Post.KIND_CHOICES, default="text")
+    variants = models.JSONField(default=list, blank=True)
+    link = models.URLField(blank=True, default="")
+    media = models.ManyToManyField(MediaAsset, blank=True, related_name="recurrence_rules")
+    interval_hours = models.PositiveIntegerField()
+    next_variant_index = models.PositiveIntegerField(default=0)
+    next_run_at = models.DateTimeField()
+    end_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["is_active", "next_run_at"])]
+
+    def __str__(self) -> str:
+        return f"Recurrence #{self.pk} -> {self.channel} every {self.interval_hours}h"

@@ -1,0 +1,40 @@
+# Discord via incoming webhook — no OAuth app, no bot install, the user just
+# pastes a webhook URL from a channel's Integrations settings. This is the
+# genuinely zero-friction path real products use for Discord; a full bot
+# install (OAuth2 + Manage Webhooks scope) buys richer permissions but is a
+# strictly worse onboarding experience for "post to my channel."
+slug: discord
+display_name: Discord
+
+capabilities:
+  max_text_length: 2000
+  post_kinds: [text]
+  rate_limits:
+    - max_requests: 30
+      per_seconds: 60
+      scope: channel
+
+instance:
+  - WEBHOOK_URL
+
+actions:
+  publish_text:
+    steps:
+      - request:
+          method: POST
+          base_url: "{{ WEBHOOK_URL }}"
+          endpoint: ""
+          params:
+            wait: "true"
+          headers:
+            Content-Type: application/json
+          payload:
+            content: "{{ TEXT }}"
+        expected_status: [200]
+        error_map:
+          429: RATE_LIMITED
+          401: AUTH_EXPIRED
+          404: AUTH_EXPIRED
+        response_mapping:
+          id: REMOTE_ID
+        terminal: true

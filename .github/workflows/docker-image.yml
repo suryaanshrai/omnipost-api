@@ -1,13 +1,81 @@
-name: Publish image to Docker Hub
+name: Verify, build, and publish image
 
 on:
   push:
     branches: ["main"]
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: omni-db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U root -d omni-db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_DEBUG: "true"
+      DJANGO_SECRET_KEY: ci-only-secret-key
+      OMNIPOST_KEK: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: omni-db
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_HOST: localhost
+      REDIS_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # pygraphviz (a dev-group dependency, used only for the admin's model
+      # graph command) needs graphviz's headers to compile from source.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgraphviz-dev pkg-config
+
+      - name: Install poetry
+        run: pip install poetry==1.8.2
+
+      - name: Install dependencies
+        run: poetry install --no-root --with dev
+
+      - name: ruff
+        run: poetry run ruff check .
+
+      - name: mypy
+        run: poetry run mypy app
+
+      - name: pytest (real Postgres + Redis)
+        run: poetry run pytest
+
+      - name: makemigrations --check
+        run: poetry run python manage.py makemigrations --check --dry-run
+        working-directory: app
+
   docker:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -25,4 +93,12 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: suryaanshrai515/omnipost-api:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          # :latest stays for compatibility with existing docker-compose.yml
+          # setups; the SHA tag gives a concrete rollback target that :latest
+          # alone never provided (docker-compose.yml's IMAGE_TAG variable
+          # pins to it).
+          tags: |
+            suryaanshrai515/omnipost-api:latest
+            suryaanshrai515/omnipost-api:${{ github.sha }}
