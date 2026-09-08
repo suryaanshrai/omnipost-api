@@ -53,8 +53,10 @@ jobs:
 
       # pygraphviz (a dev-group dependency, used only for the admin's model
       # graph command) needs graphviz's headers to compile from source.
+      # ffmpeg provides ffprobe/ffmpeg for jobs/media.py's ingest/rendition
+      # tests (matches the production Dockerfile's own apt-get line).
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgraphviz-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgraphviz-dev pkg-config ffmpeg
 
       - name: Install poetry
         run: pip install poetry==1.8.2
