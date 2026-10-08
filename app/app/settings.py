@@ -174,6 +174,18 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "REST API for the OmniPost project",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Several models reuse the field names `kind`/`status` with different
+    # choice sets; without explicit names spectacular disambiguates with
+    # hash suffixes (KindA52Enum) that churn the generated TS types.
+    "ENUM_NAME_OVERRIDES": {
+        "PostKindEnum": "omnipost_api.models.Post.KIND_CHOICES",
+        "PostStatusEnum": "omnipost_api.models.Post.STATUS_CHOICES",
+        "PostTargetStatusEnum": "omnipost_api.models.PostTarget.STATUS_CHOICES",
+        "MediaKindEnum": "omnipost_api.models.MediaAsset.KIND_CHOICES",
+        "PublishAttemptStatusEnum": "omnipost_api.models.PublishAttempt.STATUS_CHOICES",
+        "ChannelHealthEnum": "omnipost_api.models.Channel.HEALTH_CHOICES",
+        "AIProviderEnum": "omnipost_api.models.ProviderKey.PROVIDER_CHOICES",
+    },
 }
 
 

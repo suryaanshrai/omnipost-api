@@ -11,14 +11,23 @@ from django.utils.text import slugify
 from ..models import Membership, Organization, Workspace
 
 
-def create_personal_workspace(user) -> Workspace:
-    org = Organization.objects.create(name=f"{user.username}'s workspace", plan=Organization.PLAN_FREE)
-    base_slug = slugify(user.username) or f"user-{user.pk}"
+def unique_workspace_slug(base: str, fallback: str = "workspace") -> str:
+    """A Workspace.slug is unique=True with no default — anything that
+    creates a Workspace without an explicit slug (signup provisioning below,
+    and WorkspaceViewSet.perform_create for a user-initiated "create my
+    workspace") needs one derived and guaranteed free."""
+    base_slug = slugify(base) or fallback
     slug = base_slug
     suffix = 1
     while Workspace.objects.filter(slug=slug).exists():
         suffix += 1
         slug = f"{base_slug}-{suffix}"
+    return slug
+
+
+def create_personal_workspace(user) -> Workspace:
+    org = Organization.objects.create(name=f"{user.username}'s workspace", plan=Organization.PLAN_FREE)
+    slug = unique_workspace_slug(user.username, fallback=f"user-{user.pk}")
     workspace = Workspace.objects.create(organization=org, name=org.name, slug=slug)
     Membership.objects.create(workspace=workspace, user=user, role=Membership.ROLE_OWNER)
     return workspace

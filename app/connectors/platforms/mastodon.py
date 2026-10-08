@@ -35,6 +35,8 @@ _SCOPES = "read:accounts write:statuses write:media"
 
 
 class MastodonConnector(DeclarativeConnector):
+    oauth_extra_fields = ("instance_domain",)
+
     def __init__(self) -> None:
         with open(_SPEC_PATH, encoding="utf-8") as f:
             spec = yaml.safe_load(f)

@@ -120,6 +120,9 @@ class DeclarativeConnector(Connector):
     def __post_init__(self) -> None:
         self.slug = self.spec["slug"]
         self.capabilities = _capabilities_from_spec(self.spec)
+        # A spec's `instance` list is exactly the credential bag its steps
+        # template against — the same keys a user pastes in to connect.
+        self.credential_fields = tuple(self.spec["instance"])
 
     def _action_name_for(self, post_kind: str) -> str:
         mapping = {

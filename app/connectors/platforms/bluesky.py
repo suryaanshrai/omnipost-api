@@ -35,6 +35,7 @@ _URL_RE = re.compile(r"https?://[^\s]+")
 
 class BlueskyConnector(Connector):
     slug = "bluesky"
+    credential_fields = ("IDENTIFIER", "APP_PASSWORD")
     capabilities = Capabilities(
         slug="bluesky",
         display_name="Bluesky",

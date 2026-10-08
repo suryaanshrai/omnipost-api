@@ -1,0 +1,5421 @@
+openapi: 3.0.3
+info:
+  title: OmniPost
+  version: 1.0.0
+  description: REST API for the OmniPost project
+paths:
+  /ai/alt-text/:
+    post:
+      operationId: ai_alt_text_create
+      description: |-
+        POST {media, provider?} -> {alt_text}. Also writes the result onto
+        MediaAsset.alt_text so the composer picks it up immediately.
+      tags:
+      - ai
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AltTextRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AltTextRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AltTextRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AltTextResult'
+          description: ''
+  /ai/images/:
+    post:
+      operationId: ai_images_create
+      description: POST {workspace, prompt, aspect?, provider?} -> the created MediaAsset.
+      tags:
+      - ai
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GenerateImageRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GenerateImageRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+  /ai/repurpose/:
+    post:
+      operationId: ai_repurpose_create
+      description: |-
+        POST {workspace, source_text | source_url, target_formats: [str...],
+        voice_profile?, provider?} -> {results: {format: text}}.
+      tags:
+      - ai
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepurposeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RepurposeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RepurposeRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepurposeResult'
+          description: ''
+  /ai/usage/:
+    get:
+      operationId: ai_usage_retrieve
+      description: GET ?workspace=<id> -> current AI quota usage, for a usage badge.
+      parameters:
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ai
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIUsage'
+          description: ''
+  /ai/variants/:
+    post:
+      operationId: ai_variants_create
+      description: |-
+        POST {workspace, brief, channels: [id...], voice_profile?, provider?}
+        -> {variants: [{channel, text, findings}]}. One brief, one LLM call,
+        one native variant per requested channel — the differentiator feature
+        from the plan, not N separate "generate a caption" calls.
+      tags:
+      - ai
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVariantsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GenerateVariantsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GenerateVariantsRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateVariantsResult'
+          description: ''
+  /app-credentials/:
+    get:
+      operationId: app_credentials_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - app-credentials
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAppCredentialList'
+          description: ''
+    post:
+      operationId: app_credentials_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - app-credentials
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppCredential'
+          description: ''
+  /app-credentials/{id}/:
+    get:
+      operationId: app_credentials_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this app credential.
+        required: true
+      tags:
+      - app-credentials
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppCredential'
+          description: ''
+    put:
+      operationId: app_credentials_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this app credential.
+        required: true
+      tags:
+      - app-credentials
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppCredential'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppCredential'
+          description: ''
+    patch:
+      operationId: app_credentials_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this app credential.
+        required: true
+      tags:
+      - app-credentials
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAppCredential'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAppCredential'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAppCredential'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppCredential'
+          description: ''
+    delete:
+      operationId: app_credentials_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this app credential.
+        required: true
+      tags:
+      - app-credentials
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /auth/login/:
+    post:
+      operationId: auth_login_create
+      description: |-
+        Check the credentials and return the REST Token
+        if the credentials are valid and authenticated.
+        Calls Django Auth login method to register User ID
+        in Django session framework
+
+        Accept the following POST parameters: username, password
+        Return the REST Framework Token Object's key.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Login'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Login'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          description: ''
+  /auth/logout/:
+    post:
+      operationId: auth_logout_create
+      description: |-
+        Calls Django logout method and delete the Token object
+        assigned to the current User object.
+
+        Accepts/Returns nothing.
+      tags:
+      - auth
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/password/change/:
+    post:
+      operationId: auth_password_change_create
+      description: |-
+        Calls Django Auth SetPasswordForm save method.
+
+        Accepts the following POST parameters: new_password1, new_password2
+        Returns the success/fail message.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/password/reset/:
+    post:
+      operationId: auth_password_reset_create
+      description: |-
+        Calls Django Auth PasswordResetForm save method.
+
+        Accepts the following POST parameters: email
+        Returns the success/fail message.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/password/reset/confirm/:
+    post:
+      operationId: auth_password_reset_confirm_create
+      description: |-
+        Password reset e-mail link is confirmed, therefore
+        this resets the user's password.
+
+        Accepts the following POST parameters: token, uid,
+            new_password1, new_password2
+        Returns the success/fail message.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirm'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/registration/:
+    post:
+      operationId: auth_registration_create
+      description: |-
+        Registers a new user.
+
+        Accepts the following POST parameters: username, email, password1, password2.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Register'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Register'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          description: ''
+  /auth/registration/resend-email/:
+    post:
+      operationId: auth_registration_resend_email_create
+      description: |-
+        Resends another email to an unverified email.
+
+        Accepts the following POST parameter: email.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendEmailVerification'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResendEmailVerification'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResendEmailVerification'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/registration/verify-email/:
+    post:
+      operationId: auth_registration_verify_email_create
+      description: |-
+        Verifies the email associated with the provided key.
+
+        Accepts the following POST parameter: key.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmail'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VerifyEmail'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VerifyEmail'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+  /auth/user/:
+    get:
+      operationId: auth_user_retrieve
+      description: |-
+        Reads and updates UserModel fields
+        Accepts GET, PUT, PATCH methods.
+
+        Default accepted fields: username, first_name, last_name
+        Default display fields: pk, username, email, first_name, last_name
+        Read-only fields: pk, email
+
+        Returns UserModel fields.
+      tags:
+      - auth
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+          description: ''
+    put:
+      operationId: auth_user_update
+      description: |-
+        Reads and updates UserModel fields
+        Accepts GET, PUT, PATCH methods.
+
+        Default accepted fields: username, first_name, last_name
+        Default display fields: pk, username, email, first_name, last_name
+        Read-only fields: pk, email
+
+        Returns UserModel fields.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDetails'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserDetails'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserDetails'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+          description: ''
+    patch:
+      operationId: auth_user_partial_update
+      description: |-
+        Reads and updates UserModel fields
+        Accepts GET, PUT, PATCH methods.
+
+        Default accepted fields: username, first_name, last_name
+        Default display fields: pk, username, email, first_name, last_name
+        Read-only fields: pk, email
+
+        Returns UserModel fields.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserDetails'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserDetails'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserDetails'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+          description: ''
+  /blackout-windows/:
+    get:
+      operationId: blackout_windows_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - blackout-windows
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBlackoutWindowList'
+          description: ''
+    post:
+      operationId: blackout_windows_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - blackout-windows
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackoutWindow'
+          description: ''
+  /blackout-windows/{id}/:
+    get:
+      operationId: blackout_windows_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this blackout window.
+        required: true
+      tags:
+      - blackout-windows
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackoutWindow'
+          description: ''
+    put:
+      operationId: blackout_windows_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this blackout window.
+        required: true
+      tags:
+      - blackout-windows
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BlackoutWindow'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackoutWindow'
+          description: ''
+    patch:
+      operationId: blackout_windows_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this blackout window.
+        required: true
+      tags:
+      - blackout-windows
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBlackoutWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBlackoutWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBlackoutWindow'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackoutWindow'
+          description: ''
+    delete:
+      operationId: blackout_windows_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this blackout window.
+        required: true
+      tags:
+      - blackout-windows
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /channels/:
+    get:
+      operationId: channels_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - channels
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChannelList'
+          description: ''
+    post:
+      operationId: channels_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - channels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Channel'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Channel'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Channel'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+          description: ''
+  /channels/{id}/:
+    get:
+      operationId: channels_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this channel.
+        required: true
+      tags:
+      - channels
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+          description: ''
+    put:
+      operationId: channels_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this channel.
+        required: true
+      tags:
+      - channels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Channel'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Channel'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Channel'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+          description: ''
+    patch:
+      operationId: channels_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this channel.
+        required: true
+      tags:
+      - channels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedChannel'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedChannel'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedChannel'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+          description: ''
+    delete:
+      operationId: channels_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this channel.
+        required: true
+      tags:
+      - channels
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /channels/{id}/best-times/:
+    get:
+      operationId: channels_best_times_list
+      description: |-
+        Best-time-to-post suggestions derived from this channel's own
+        publish + engagement history — see services/best_times.py. Returns
+        an empty list (not an error) when there isn't enough history yet.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this channel.
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - channels
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBestTimeList'
+          description: ''
+  /connectors/:
+    get:
+      operationId: connectors_list
+      description: |-
+        GET -> every registered connector's capabilities and gating info.
+        Previously nowhere for the frontend to read this from at all: the old UI
+        hardcoded a 3-platform table (Instagram/Facebook/LinkedIn) that was
+        already wrong the day the backend grew to eleven connectors. This is the
+        single source of truth `connectors.registry` — same data
+        Connector.validate() enforces server-side — so the Connections screen and
+        composer can't drift from it the way the hardcoded table did.
+      tags:
+      - connectors
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Connector'
+          description: ''
+  /media/:
+    get:
+      operationId: media_list
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - media
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMediaAssetList'
+          description: ''
+    post:
+      operationId: media_create
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      tags:
+      - media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+  /media/{id}/:
+    get:
+      operationId: media_retrieve
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this media asset.
+        required: true
+      tags:
+      - media
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+    put:
+      operationId: media_update
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this media asset.
+        required: true
+      tags:
+      - media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+    patch:
+      operationId: media_partial_update
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this media asset.
+        required: true
+      tags:
+      - media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMediaAsset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMediaAsset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMediaAsset'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+    delete:
+      operationId: media_destroy
+      description: |-
+        Two ways to get a file into a MediaAsset:
+        * multipart POST /api/v1/media/ with a `file` field — always available,
+          the only option for self-host without S3 configured.
+        * presign() then a confirming POST with `key` instead of `file` — the
+          browser uploads straight to S3, the API never sees the bytes. Only
+          available when settings.S3_MEDIA_ENABLED.
+        Either way, a successful create enqueues jobs.media.probe_asset so
+        width/height/duration/mime_type get filled in asynchronously.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this media asset.
+        required: true
+      tags:
+      - media
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /media/presign/:
+    post:
+      operationId: media_presign_create
+      description: |-
+        Returns a presigned S3 POST for direct browser upload. The client
+        then confirms with POST /api/v1/media/ passing `workspace`, `kind`,
+        and the returned `key` (no file body) to create the MediaAsset row.
+      tags:
+      - media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MediaAsset'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+  /memberships/:
+    get:
+      operationId: memberships_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - memberships
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMembershipList'
+          description: ''
+    post:
+      operationId: memberships_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - memberships
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Membership'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Membership'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Membership'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+          description: ''
+  /memberships/{id}/:
+    get:
+      operationId: memberships_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this membership.
+        required: true
+      tags:
+      - memberships
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+          description: ''
+    put:
+      operationId: memberships_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this membership.
+        required: true
+      tags:
+      - memberships
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Membership'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Membership'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Membership'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+          description: ''
+    patch:
+      operationId: memberships_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this membership.
+        required: true
+      tags:
+      - memberships
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMembership'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMembership'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMembership'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+          description: ''
+    delete:
+      operationId: memberships_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this membership.
+        required: true
+      tags:
+      - memberships
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /oauth/complete/:
+    post:
+      operationId: oauth_complete_create
+      tags:
+      - oauth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthCompleteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuthCompleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OAuthCompleteRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+          description: ''
+  /oauth/start/:
+    post:
+      operationId: oauth_start_create
+      description: |-
+        POST {connector_slug, workspace, display_name, redirect_uri, extra}
+        -> {authorize_url, provider_state}. The frontend redirects the browser to
+        authorize_url, then POSTs to OAuthCompleteView with whatever the provider
+        appended to redirect_uri (`code`, `state`).
+      tags:
+      - oauth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResult'
+          description: ''
+  /post-targets/:
+    get:
+      operationId: post_targets_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - post-targets
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostTargetList'
+          description: ''
+  /post-targets/{id}/:
+    get:
+      operationId: post_targets_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post target.
+        required: true
+      tags:
+      - post-targets
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostTarget'
+          description: ''
+  /post-targets/{id}/performance/:
+    get:
+      operationId: post_targets_performance_list
+      description: |-
+        Full engagement history for this target, newest first — see
+        jobs/metrics.py. Empty for a target that isn't published yet, whose
+        channel's connector has no fetch_metrics() implementation, or that
+        hasn't had a poll run since it was published.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post target.
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - post-targets
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostMetricList'
+          description: ''
+  /posts/:
+    get:
+      operationId: posts_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostList'
+          description: ''
+    post:
+      operationId: posts_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Post'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Post'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Post'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/:
+    get:
+      operationId: posts_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+    put:
+      operationId: posts_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Post'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Post'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Post'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+    patch:
+      operationId: posts_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPost'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPost'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPost'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+    delete:
+      operationId: posts_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /posts/{id}/approve/:
+    post:
+      operationId: posts_approve_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/cancel/:
+    post:
+      operationId: posts_cancel_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/performance/:
+    get:
+      operationId: posts_performance_list
+      description: |-
+        Per-post performance: each published target's latest engagement
+        snapshot, keyed by target id. A target with no snapshot yet (not
+        published, no fetch_metrics() support, or not polled yet) is simply
+        omitted rather than reported as zero engagement.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostPerformanceEntryList'
+          description: ''
+  /posts/{id}/queue/:
+    post:
+      operationId: posts_queue_create
+      description: |-
+        Schedules each target via its own channel's next open QueueSlot
+        (in that channel's timezone, respecting BlackoutWindows and
+        min_gap_minutes) instead of one explicit run_at for every target.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/request-changes/:
+    post:
+      operationId: posts_request_changes_create
+      description: Sends an in-review post back to draft for edits.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/retry-target/{target_id}/:
+    post:
+      operationId: posts_retry_target_create
+      description: |-
+        Retries one failed/canceled target with a fresh epoch, so its
+        idempotency key differs from the exhausted attempt's.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      - in: path
+        name: target_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryTargetResult'
+          description: ''
+  /posts/{id}/schedule/:
+    post:
+      operationId: posts_schedule_create
+      description: |-
+        Schedules every target on this post to the same run_at. `run_at`
+        (ISO 8601, optional) overrides Post.scheduled_for for an immediate
+        "publish now". For per-channel queue-slot scheduling instead, see
+        `queue`.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/submit-for-review/:
+    post:
+      operationId: posts_submit_for_review_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/calendar/:
+    get:
+      operationId: posts_calendar_list
+      description: |-
+        GET ?workspace=<id>&start=<iso>&end=<iso> -> every PostTarget in
+        that workspace with run_at inside [start, end), for a calendar view.
+        Backs the composer's calendar rather than the flat, unfiltered
+        /posts/ list.
+      parameters:
+      - in: query
+        name: end
+        schema:
+          type: string
+        description: ISO 8601, exclusive
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - in: query
+        name: start
+        schema:
+          type: string
+        description: ISO 8601, inclusive
+        required: true
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostTargetList'
+          description: ''
+  /posts/import-csv/:
+    post:
+      operationId: posts_import_csv_create
+      description: |-
+        Bulk-schedules posts from a CSV: columns `text`, `channel_id`, and
+        optionally `link`, `kind`, `run_at`. A row with no `run_at` is queued
+        via its channel's next open QueueSlot (see `queue`); a row with one
+        is scheduled explicitly (see `schedule`). Upload as multipart `file`
+        or as a `csv_text` form field; `workspace` is always required.
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportCsvRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ImportCsvRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ImportCsvRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCsvResult'
+          description: ''
+  /provider-keys/:
+    get:
+      operationId: provider_keys_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - provider-keys
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProviderKeyList'
+          description: ''
+    post:
+      operationId: provider_keys_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - provider-keys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderKey'
+          description: ''
+  /provider-keys/{id}/:
+    get:
+      operationId: provider_keys_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this provider key.
+        required: true
+      tags:
+      - provider-keys
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderKey'
+          description: ''
+    put:
+      operationId: provider_keys_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this provider key.
+        required: true
+      tags:
+      - provider-keys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProviderKey'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderKey'
+          description: ''
+    patch:
+      operationId: provider_keys_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this provider key.
+        required: true
+      tags:
+      - provider-keys
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderKey'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderKey'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderKey'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderKey'
+          description: ''
+    delete:
+      operationId: provider_keys_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this provider key.
+        required: true
+      tags:
+      - provider-keys
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /publish-attempts/:
+    get:
+      operationId: publish_attempts_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - publish-attempts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPublishAttemptList'
+          description: ''
+  /publish-attempts/{id}/:
+    get:
+      operationId: publish_attempts_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this publish attempt.
+        required: true
+      tags:
+      - publish-attempts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishAttempt'
+          description: ''
+  /queue-slots/:
+    get:
+      operationId: queue_slots_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - queue-slots
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedQueueSlotList'
+          description: ''
+    post:
+      operationId: queue_slots_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - queue-slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueSlot'
+          description: ''
+  /queue-slots/{id}/:
+    get:
+      operationId: queue_slots_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this queue slot.
+        required: true
+      tags:
+      - queue-slots
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueSlot'
+          description: ''
+    put:
+      operationId: queue_slots_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this queue slot.
+        required: true
+      tags:
+      - queue-slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/QueueSlot'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueSlot'
+          description: ''
+    patch:
+      operationId: queue_slots_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this queue slot.
+        required: true
+      tags:
+      - queue-slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedQueueSlot'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedQueueSlot'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedQueueSlot'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueSlot'
+          description: ''
+    delete:
+      operationId: queue_slots_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this queue slot.
+        required: true
+      tags:
+      - queue-slots
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /recurrence-rules/:
+    get:
+      operationId: recurrence_rules_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - recurrence-rules
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRecurrenceRuleList'
+          description: ''
+    post:
+      operationId: recurrence_rules_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - recurrence-rules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurrenceRule'
+          description: ''
+  /recurrence-rules/{id}/:
+    get:
+      operationId: recurrence_rules_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurrence rule.
+        required: true
+      tags:
+      - recurrence-rules
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurrenceRule'
+          description: ''
+    put:
+      operationId: recurrence_rules_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurrence rule.
+        required: true
+      tags:
+      - recurrence-rules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecurrenceRule'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurrenceRule'
+          description: ''
+    patch:
+      operationId: recurrence_rules_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurrence rule.
+        required: true
+      tags:
+      - recurrence-rules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurrenceRule'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurrenceRule'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRecurrenceRule'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurrenceRule'
+          description: ''
+    delete:
+      operationId: recurrence_rules_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this recurrence rule.
+        required: true
+      tags:
+      - recurrence-rules
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /validate/:
+    post:
+      operationId: validate_create
+      description: |-
+        POST {channel, text, post_kind, link, media: [asset_id...]} -> per-
+        channel findings from Connector.validate() — the same check the job
+        engine runs before publishing, exposed here so the composer can surface
+        "this is 4:5, Reels needs 9:16" before anything gets scheduled, not
+        after a publish attempt fails.
+      tags:
+      - validate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateResult'
+          description: ''
+  /voice-profiles/:
+    get:
+      operationId: voice_profiles_list
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - voice-profiles
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVoiceProfileList'
+          description: ''
+    post:
+      operationId: voice_profiles_create
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      tags:
+      - voice-profiles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceProfile'
+          description: ''
+  /voice-profiles/{id}/:
+    get:
+      operationId: voice_profiles_retrieve
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this voice profile.
+        required: true
+      tags:
+      - voice-profiles
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceProfile'
+          description: ''
+    put:
+      operationId: voice_profiles_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this voice profile.
+        required: true
+      tags:
+      - voice-profiles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VoiceProfile'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceProfile'
+          description: ''
+    patch:
+      operationId: voice_profiles_partial_update
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this voice profile.
+        required: true
+      tags:
+      - voice-profiles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedVoiceProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedVoiceProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedVoiceProfile'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceProfile'
+          description: ''
+    delete:
+      operationId: voice_profiles_destroy
+      description: |-
+        Base for any viewset whose model has a direct `workspace` FK: scopes
+        the queryset to workspaces the requesting user is a member of. The old
+        API had no such scoping at all — any authenticated user could read or
+        write any other user's rows by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this voice profile.
+        required: true
+      tags:
+      - voice-profiles
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /workspaces/:
+    get:
+      operationId: workspaces_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - workspaces
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedWorkspaceList'
+          description: ''
+    post:
+      operationId: workspaces_create
+      tags:
+      - workspaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+          description: ''
+  /workspaces/{id}/:
+    get:
+      operationId: workspaces_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this workspace.
+        required: true
+      tags:
+      - workspaces
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+          description: ''
+    put:
+      operationId: workspaces_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this workspace.
+        required: true
+      tags:
+      - workspaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Workspace'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+          description: ''
+    patch:
+      operationId: workspaces_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this workspace.
+        required: true
+      tags:
+      - workspaces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedWorkspace'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedWorkspace'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedWorkspace'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+          description: ''
+    delete:
+      operationId: workspaces_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this workspace.
+        required: true
+      tags:
+      - workspaces
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+components:
+  schemas:
+    AIProviderEnum:
+      enum:
+      - anthropic
+      - openai
+      - gemini
+      - openrouter
+      type: string
+      description: |-
+        * `anthropic` - Anthropic
+        * `openai` - OpenAI
+        * `gemini` - Gemini
+        * `openrouter` - OpenRouter
+    AIUsage:
+      type: object
+      properties:
+        ai_text_generation:
+          $ref: '#/components/schemas/AIUsageCounter'
+        ai_image_generation:
+          $ref: '#/components/schemas/AIUsageCounterImage'
+      required:
+      - ai_image_generation
+      - ai_text_generation
+    AIUsageCounter:
+      type: object
+      properties:
+        committed:
+          type: integer
+        reserved:
+          type: integer
+        limit:
+          type: integer
+          nullable: true
+      required:
+      - committed
+      - limit
+      - reserved
+    AIUsageCounterImage:
+      type: object
+      properties:
+        committed:
+          type: integer
+        reserved:
+          type: integer
+        limit:
+          type: integer
+          nullable: true
+      required:
+      - committed
+      - limit
+      - reserved
+    AltTextRequest:
+      type: object
+      properties:
+        media:
+          type: integer
+        provider:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - media
+    AltTextResult:
+      type: object
+      properties:
+        alt_text:
+          type: string
+      required:
+      - alt_text
+    AppCredential:
+      type: object
+      description: |-
+        client_secret is write-only and never echoed back — unlike
+        ProviderKeySerializer there's no live ping to validate it against here,
+        since exercising it means actually starting an OAuth flow with the
+        platform (see PublishView-adjacent oauth.py); a typo surfaces the first
+        time the workspace tries to connect a channel.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        connector_slug:
+          type: string
+          maxLength: 50
+        client_id:
+          type: string
+          maxLength: 300
+        label:
+          type: string
+          maxLength: 100
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        client_secret:
+          type: string
+          writeOnly: true
+      required:
+      - client_id
+      - client_secret
+      - connector_slug
+      - created_at
+      - id
+      - workspace
+    AspectEnum:
+      enum:
+      - square_1x1
+      - portrait_4x5
+      - vertical_9x16
+      - landscape_16x9
+      type: string
+      description: |-
+        * `square_1x1` - square_1x1
+        * `portrait_4x5` - portrait_4x5
+        * `vertical_9x16` - vertical_9x16
+        * `landscape_16x9` - landscape_16x9
+    BestTime:
+      type: object
+      description: |-
+        Read-only shape of one services.best_times.Suggestion — backs
+        GET /channels/{id}/best-times/.
+      properties:
+        weekday:
+          type: integer
+        hour:
+          type: integer
+        sample_size:
+          type: integer
+        avg_engagement:
+          type: number
+          format: double
+      required:
+      - avg_engagement
+      - hour
+      - sample_size
+      - weekday
+    BlackoutWindow:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        channel:
+          type: integer
+          nullable: true
+        label:
+          type: string
+          maxLength: 200
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+      required:
+      - ends_at
+      - id
+      - starts_at
+      - workspace
+    BlankEnum:
+      enum:
+      - ''
+    Channel:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        connector_slug:
+          type: string
+          maxLength: 50
+        display_name:
+          type: string
+          maxLength: 200
+        external_account_id:
+          type: string
+          maxLength: 200
+        health:
+          allOf:
+          - $ref: '#/components/schemas/ChannelHealthEnum'
+          readOnly: true
+        health_detail:
+          type: string
+          readOnly: true
+        token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        refresh_token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        timezone:
+          type: string
+          maxLength: 64
+        min_gap_minutes:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        credentials:
+          type: object
+          additionalProperties:
+            type: string
+          writeOnly: true
+      required:
+      - connector_slug
+      - created_at
+      - display_name
+      - health
+      - health_detail
+      - id
+      - workspace
+    ChannelHealthEnum:
+      enum:
+      - healthy
+      - needs_attention
+      - broken
+      type: string
+      description: |-
+        * `healthy` - Healthy
+        * `needs_attention` - Needs attention
+        * `broken` - Broken
+    Connector:
+      type: object
+      description: |-
+        Read-only view of one connectors.registry entry: its slug plus the
+        capability/gating facts the frontend needs and can't otherwise discover
+        (see GET /connectors/ in views.py).
+      properties:
+        slug:
+          type: string
+        display_name:
+          type: string
+        requires_own_app:
+          type: boolean
+        supports_oauth:
+          type: boolean
+        credential_fields:
+          type: array
+          items:
+            type: string
+        oauth_extra_fields:
+          type: array
+          items:
+            type: string
+        max_text_length:
+          type: integer
+          nullable: true
+        supports_link:
+          type: boolean
+        supports_alt_text:
+          type: boolean
+        supports_threads:
+          type: boolean
+        supports_scheduling_native:
+          type: boolean
+        post_kinds:
+          type: array
+          items:
+            type: string
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaRule'
+      required:
+      - credential_fields
+      - display_name
+      - max_text_length
+      - media
+      - oauth_extra_fields
+      - post_kinds
+      - requires_own_app
+      - slug
+      - supports_alt_text
+      - supports_link
+      - supports_oauth
+      - supports_scheduling_native
+      - supports_threads
+    GenerateImageRequest:
+      type: object
+      properties:
+        workspace:
+          type: integer
+        prompt:
+          type: string
+        aspect:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/AspectEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        provider:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - prompt
+      - workspace
+    GenerateVariantsRequest:
+      type: object
+      properties:
+        workspace:
+          type: integer
+        brief:
+          type: string
+        channels:
+          type: array
+          items:
+            type: integer
+        voice_profile:
+          type: integer
+          nullable: true
+        provider:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - brief
+      - channels
+      - workspace
+    GenerateVariantsResult:
+      type: object
+      properties:
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratedVariant'
+      required:
+      - variants
+    GeneratedVariant:
+      type: object
+      properties:
+        channel:
+          type: integer
+        text:
+          type: string
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidateFinding'
+      required:
+      - channel
+      - findings
+      - text
+    ImportCsvRequest:
+      type: object
+      properties:
+        workspace:
+          type: integer
+        file:
+          type: string
+          format: uri
+        csv_text:
+          type: string
+      required:
+      - workspace
+    ImportCsvResult:
+      type: object
+      properties:
+        created:
+          type: integer
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportCsvRowError'
+      required:
+      - created
+      - errors
+    ImportCsvRowError:
+      type: object
+      properties:
+        row:
+          type: integer
+        detail: {}
+      required:
+      - detail
+      - row
+    Login:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+      - password
+    MediaAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        file:
+          type: string
+          format: uri
+        kind:
+          $ref: '#/components/schemas/MediaKindEnum'
+        mime_type:
+          type: string
+          readOnly: true
+        size_bytes:
+          type: integer
+          readOnly: true
+          nullable: true
+        width:
+          type: integer
+          readOnly: true
+          nullable: true
+        height:
+          type: integer
+          readOnly: true
+          nullable: true
+        duration_s:
+          type: number
+          format: double
+          readOnly: true
+          nullable: true
+        alt_text:
+          type: string
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - duration_s
+      - file
+      - height
+      - id
+      - kind
+      - mime_type
+      - size_bytes
+      - width
+      - workspace
+    MediaKindEnum:
+      enum:
+      - image
+      - video
+      - gif
+      type: string
+      description: |-
+        * `image` - Image
+        * `video` - Video
+        * `gif` - GIF
+    MediaRule:
+      type: object
+      description: |-
+        Read-only view of connectors.capabilities.MediaRule — not a
+        ModelSerializer, since Capabilities lives in code (connectors/*), not the
+        database. Backs GET /connectors/, so the frontend's composer and Connect
+        modal validate against the same rules Connector.validate() enforces
+        server-side, instead of a hand-maintained table drifting out of sync.
+      properties:
+        kinds:
+          type: array
+          items:
+            type: string
+        max_count:
+          type: integer
+        max_size_mb:
+          type: number
+          format: double
+          nullable: true
+        max_duration_s:
+          type: number
+          format: double
+          nullable: true
+        min_duration_s:
+          type: number
+          format: double
+          nullable: true
+        allowed_aspect_ratios:
+          type: array
+          items:
+            type: string
+        allowed_mime_types:
+          type: array
+          items:
+            type: string
+      required:
+      - allowed_aspect_ratios
+      - allowed_mime_types
+      - kinds
+      - max_count
+      - max_duration_s
+      - max_size_mb
+      - min_duration_s
+    Membership:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        user:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - user
+      - workspace
+    NullEnum:
+      enum:
+      - null
+    OAuthCompleteRequest:
+      type: object
+      properties:
+        connector_slug:
+          type: string
+        code:
+          type: string
+        redirect_uri:
+          type: string
+        state:
+          type: string
+      required:
+      - code
+      - connector_slug
+      - redirect_uri
+      - state
+    OAuthStartRequest:
+      type: object
+      properties:
+        connector_slug:
+          type: string
+        workspace:
+          type: integer
+        display_name:
+          type: string
+        redirect_uri:
+          type: string
+        extra: {}
+      required:
+      - connector_slug
+      - redirect_uri
+      - workspace
+    OAuthStartResult:
+      type: object
+      properties:
+        authorize_url:
+          type: string
+        provider_state:
+          type: string
+      required:
+      - authorize_url
+      - provider_state
+    PaginatedAppCredentialList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppCredential'
+    PaginatedBestTimeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BestTime'
+    PaginatedBlackoutWindowList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlackoutWindow'
+    PaginatedChannelList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Channel'
+    PaginatedMediaAssetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaAsset'
+    PaginatedMembershipList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+    PaginatedPostList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Post'
+    PaginatedPostMetricList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostMetric'
+    PaginatedPostPerformanceEntryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostPerformanceEntry'
+    PaginatedPostTargetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTarget'
+    PaginatedProviderKeyList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderKey'
+    PaginatedPublishAttemptList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublishAttempt'
+    PaginatedQueueSlotList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueSlot'
+    PaginatedRecurrenceRuleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecurrenceRule'
+    PaginatedVoiceProfileList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoiceProfile'
+    PaginatedWorkspaceList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+    PasswordChange:
+      type: object
+      properties:
+        new_password1:
+          type: string
+          maxLength: 128
+        new_password2:
+          type: string
+          maxLength: 128
+      required:
+      - new_password1
+      - new_password2
+    PasswordReset:
+      type: object
+      description: Serializer for requesting a password reset e-mail.
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+      - email
+    PasswordResetConfirm:
+      type: object
+      description: Serializer for confirming a password reset attempt.
+      properties:
+        new_password1:
+          type: string
+          maxLength: 128
+        new_password2:
+          type: string
+          maxLength: 128
+        uid:
+          type: string
+        token:
+          type: string
+      required:
+      - new_password1
+      - new_password2
+      - token
+      - uid
+    PatchedAppCredential:
+      type: object
+      description: |-
+        client_secret is write-only and never echoed back — unlike
+        ProviderKeySerializer there's no live ping to validate it against here,
+        since exercising it means actually starting an OAuth flow with the
+        platform (see PublishView-adjacent oauth.py); a typo surfaces the first
+        time the workspace tries to connect a channel.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        connector_slug:
+          type: string
+          maxLength: 50
+        client_id:
+          type: string
+          maxLength: 300
+        label:
+          type: string
+          maxLength: 100
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        client_secret:
+          type: string
+          writeOnly: true
+    PatchedBlackoutWindow:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        channel:
+          type: integer
+          nullable: true
+        label:
+          type: string
+          maxLength: 200
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+    PatchedChannel:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        connector_slug:
+          type: string
+          maxLength: 50
+        display_name:
+          type: string
+          maxLength: 200
+        external_account_id:
+          type: string
+          maxLength: 200
+        health:
+          allOf:
+          - $ref: '#/components/schemas/ChannelHealthEnum'
+          readOnly: true
+        health_detail:
+          type: string
+          readOnly: true
+        token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        refresh_token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        timezone:
+          type: string
+          maxLength: 64
+        min_gap_minutes:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        credentials:
+          type: object
+          additionalProperties:
+            type: string
+          writeOnly: true
+    PatchedMediaAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        file:
+          type: string
+          format: uri
+        kind:
+          $ref: '#/components/schemas/MediaKindEnum'
+        mime_type:
+          type: string
+          readOnly: true
+        size_bytes:
+          type: integer
+          readOnly: true
+          nullable: true
+        width:
+          type: integer
+          readOnly: true
+          nullable: true
+        height:
+          type: integer
+          readOnly: true
+          nullable: true
+        duration_s:
+          type: number
+          format: double
+          readOnly: true
+          nullable: true
+        alt_text:
+          type: string
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedMembership:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        user:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedPost:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        author:
+          type: integer
+          readOnly: true
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/PostKindEnum'
+        base_text:
+          type: string
+        base_media:
+          type: array
+          items:
+            type: integer
+        link:
+          type: string
+          format: uri
+          maxLength: 200
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PostStatusEnum'
+          readOnly: true
+        scheduled_for:
+          type: string
+          format: date-time
+          nullable: true
+        ai_generated:
+          type: boolean
+        voice_profile:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTarget'
+          readOnly: true
+        target_specs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetWrite'
+          writeOnly: true
+    PatchedProviderKey:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        provider:
+          $ref: '#/components/schemas/AIProviderEnum'
+        label:
+          type: string
+          maxLength: 100
+        is_active:
+          type: boolean
+        last_validated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        api_key:
+          type: string
+          writeOnly: true
+    PatchedQueueSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        channel:
+          type: integer
+        weekday:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        time_of_day:
+          type: string
+          format: time
+        is_active:
+          type: boolean
+    PatchedRecurrenceRule:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        channel:
+          type: integer
+        kind:
+          $ref: '#/components/schemas/PostKindEnum'
+        variants: {}
+        link:
+          type: string
+          format: uri
+          maxLength: 200
+        media:
+          type: array
+          items:
+            type: integer
+        interval_hours:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        next_variant_index:
+          type: integer
+          readOnly: true
+        next_run_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedUserDetails:
+      type: object
+      description: User model w/o password
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Email address
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+    PatchedVoiceProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        name:
+          type: string
+          maxLength: 200
+        style_summary:
+          type: string
+        example_posts: {}
+        is_default:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedWorkspace:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        organization:
+          type: integer
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          maxLength: 220
+          pattern: ^[-a-zA-Z0-9_]+$
+        timezone:
+          type: string
+          maxLength: 64
+        approval_workflow_enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    Post:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        author:
+          type: integer
+          readOnly: true
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/PostKindEnum'
+        base_text:
+          type: string
+        base_media:
+          type: array
+          items:
+            type: integer
+        link:
+          type: string
+          format: uri
+          maxLength: 200
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PostStatusEnum'
+          readOnly: true
+        scheduled_for:
+          type: string
+          format: date-time
+          nullable: true
+        ai_generated:
+          type: boolean
+        voice_profile:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTarget'
+          readOnly: true
+        target_specs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetWrite'
+          writeOnly: true
+      required:
+      - author
+      - created_at
+      - id
+      - status
+      - targets
+      - updated_at
+      - workspace
+    PostKindEnum:
+      enum:
+      - text
+      - image
+      - video
+      - story
+      - short_video
+      type: string
+      description: |-
+        * `text` - Text
+        * `image` - Image
+        * `video` - Video
+        * `story` - Story
+        * `short_video` - Short video
+    PostMetric:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post_target:
+          type: integer
+          readOnly: true
+        impressions:
+          type: integer
+          readOnly: true
+          nullable: true
+        likes:
+          type: integer
+          readOnly: true
+          nullable: true
+        comments:
+          type: integer
+          readOnly: true
+          nullable: true
+        shares:
+          type: integer
+          readOnly: true
+          nullable: true
+        raw:
+          readOnly: true
+        fetched_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - comments
+      - fetched_at
+      - id
+      - impressions
+      - likes
+      - post_target
+      - raw
+      - shares
+    PostPerformanceEntry:
+      type: object
+      properties:
+        post_target:
+          type: integer
+        channel:
+          type: integer
+        connector_slug:
+          type: string
+        permalink:
+          type: string
+        metric:
+          $ref: '#/components/schemas/PostMetric'
+      required:
+      - channel
+      - connector_slug
+      - metric
+      - permalink
+      - post_target
+    PostStatusEnum:
+      enum:
+      - draft
+      - in_review
+      - approved
+      - scheduled
+      - publishing
+      - published
+      - failed
+      - canceled
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `in_review` - In review
+        * `approved` - Approved
+        * `scheduled` - Scheduled
+        * `publishing` - Publishing
+        * `published` - Published
+        * `failed` - Failed
+        * `canceled` - Canceled
+    PostTarget:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post:
+          type: integer
+        channel:
+          type: integer
+        format:
+          oneOf:
+          - $ref: '#/components/schemas/PostKindEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        text_override:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetPart'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PostTargetStatusEnum'
+          readOnly: true
+        run_at:
+          type: string
+          format: date-time
+          nullable: true
+        remote_id:
+          type: string
+          readOnly: true
+        permalink:
+          type: string
+          format: uri
+          readOnly: true
+        published_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        epoch:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - channel
+      - created_at
+      - epoch
+      - id
+      - parts
+      - permalink
+      - post
+      - published_at
+      - remote_id
+      - status
+      - updated_at
+    PostTargetPart:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        sequence:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        text:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        delay_after_s:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+      required:
+      - id
+      - sequence
+    PostTargetPartWrite:
+      type: object
+      properties:
+        sequence:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        text:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        delay_after_s:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+      required:
+      - sequence
+    PostTargetStatusEnum:
+      enum:
+      - pending
+      - scheduled
+      - publishing
+      - published
+      - failed
+      - canceled
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `scheduled` - Scheduled
+        * `publishing` - Publishing
+        * `published` - Published
+        * `failed` - Failed
+        * `canceled` - Canceled
+    PostTargetWrite:
+      type: object
+      properties:
+        channel:
+          type: integer
+        format:
+          oneOf:
+          - $ref: '#/components/schemas/PostKindEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        text_override:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetPartWrite'
+          writeOnly: true
+      required:
+      - channel
+    Provider4baEnum:
+      enum:
+      - anthropic
+      - openai
+      - gemini
+      - openrouter
+      type: string
+      description: |-
+        * `anthropic` - anthropic
+        * `openai` - openai
+        * `gemini` - gemini
+        * `openrouter` - openrouter
+    ProviderKey:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        provider:
+          $ref: '#/components/schemas/AIProviderEnum'
+        label:
+          type: string
+          maxLength: 100
+        is_active:
+          type: boolean
+        last_validated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        api_key:
+          type: string
+          writeOnly: true
+      required:
+      - api_key
+      - created_at
+      - id
+      - last_validated_at
+      - provider
+      - workspace
+    PublishAttempt:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post_target:
+          type: integer
+          readOnly: true
+        epoch:
+          type: integer
+          readOnly: true
+          default: 1
+        attempt_number:
+          type: integer
+          readOnly: true
+          default: 1
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PublishAttemptStatusEnum'
+          readOnly: true
+        error_class:
+          type: string
+          readOnly: true
+        error_detail:
+          type: string
+          readOnly: true
+        state_step:
+          type: string
+          readOnly: true
+        run_at:
+          type: string
+          format: date-time
+          readOnly: true
+        started_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - attempt_number
+      - created_at
+      - epoch
+      - error_class
+      - error_detail
+      - finished_at
+      - id
+      - post_target
+      - run_at
+      - started_at
+      - state_step
+      - status
+    PublishAttemptStatusEnum:
+      enum:
+      - queued
+      - running
+      - waiting
+      - succeeded
+      - failed
+      type: string
+      description: |-
+        * `queued` - Queued
+        * `running` - Running
+        * `waiting` - Waiting
+        * `succeeded` - Succeeded
+        * `failed` - Failed
+    QueueSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        channel:
+          type: integer
+        weekday:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        time_of_day:
+          type: string
+          format: time
+        is_active:
+          type: boolean
+      required:
+      - channel
+      - id
+      - time_of_day
+      - weekday
+    RecurrenceRule:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        channel:
+          type: integer
+        kind:
+          $ref: '#/components/schemas/PostKindEnum'
+        variants: {}
+        link:
+          type: string
+          format: uri
+          maxLength: 200
+        media:
+          type: array
+          items:
+            type: integer
+        interval_hours:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        next_variant_index:
+          type: integer
+          readOnly: true
+        next_run_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - channel
+      - created_at
+      - id
+      - interval_hours
+      - next_run_at
+      - next_variant_index
+      - updated_at
+      - workspace
+    Register:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 150
+          minLength: 1
+        email:
+          type: string
+          format: email
+        password1:
+          type: string
+          writeOnly: true
+        password2:
+          type: string
+          writeOnly: true
+      required:
+      - password1
+      - password2
+      - username
+    RepurposeRequest:
+      type: object
+      properties:
+        workspace:
+          type: integer
+        source_text:
+          type: string
+          default: ''
+        source_url:
+          type: string
+          format: uri
+          default: ''
+        target_formats:
+          type: array
+          items:
+            type: string
+        voice_profile:
+          type: integer
+          nullable: true
+        provider:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - target_formats
+      - workspace
+    RepurposeResult:
+      type: object
+      properties:
+        results:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+      - results
+    ResendEmailVerification:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+    RestAuthDetail:
+      type: object
+      properties:
+        detail:
+          type: string
+          readOnly: true
+      required:
+      - detail
+    RetryTargetResult:
+      type: object
+      properties:
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetPart'
+          readOnly: true
+        id:
+          type: integer
+          readOnly: true
+        post:
+          type: integer
+        channel:
+          type: integer
+        format:
+          oneOf:
+          - $ref: '#/components/schemas/PostKindEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        text_override:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PostTargetStatusEnum'
+          readOnly: true
+        run_at:
+          type: string
+          format: date-time
+          nullable: true
+        remote_id:
+          type: string
+          readOnly: true
+        permalink:
+          type: string
+          format: uri
+          readOnly: true
+        published_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        epoch:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        attempt_id:
+          type: integer
+      required:
+      - attempt_id
+      - channel
+      - created_at
+      - epoch
+      - id
+      - parts
+      - permalink
+      - post
+      - published_at
+      - remote_id
+      - status
+      - updated_at
+    RoleEnum:
+      enum:
+      - owner
+      - admin
+      - editor
+      - contributor
+      - viewer
+      - client_reviewer
+      type: string
+      description: |-
+        * `owner` - Owner
+        * `admin` - Admin
+        * `editor` - Editor
+        * `contributor` - Contributor
+        * `viewer` - Viewer
+        * `client_reviewer` - Client reviewer
+    ScheduleRequest:
+      type: object
+      properties:
+        run_at:
+          type: string
+          format: date-time
+    Token:
+      type: object
+      description: Serializer for Token model.
+      properties:
+        key:
+          type: string
+          maxLength: 40
+      required:
+      - key
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Email address
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+      required:
+      - email
+      - first_name
+      - id
+      - last_name
+      - username
+    UserDetails:
+      type: object
+      description: User model w/o password
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Email address
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+      required:
+      - email
+      - pk
+      - username
+    ValidateFinding:
+      type: object
+      description: |-
+        One connectors.errors.Finding — shared by POST /validate/ and the AI
+        variant generator, which both report per-channel rule findings.
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        blocking:
+          type: boolean
+        field:
+          type: string
+          nullable: true
+      required:
+      - blocking
+      - code
+      - field
+      - message
+    ValidateRequest:
+      type: object
+      properties:
+        channel:
+          type: integer
+        text:
+          type: string
+          default: ''
+        post_kind:
+          type: string
+          default: text
+        link:
+          type: string
+          nullable: true
+        media:
+          type: array
+          items:
+            type: integer
+      required:
+      - channel
+    ValidateResult:
+      type: object
+      properties:
+        channel:
+          type: integer
+        ok:
+          type: boolean
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidateFinding'
+      required:
+      - channel
+      - findings
+      - ok
+    VerifyEmail:
+      type: object
+      properties:
+        key:
+          type: string
+          writeOnly: true
+      required:
+      - key
+    VoiceProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        name:
+          type: string
+          maxLength: 200
+        style_summary:
+          type: string
+        example_posts: {}
+        is_default:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - id
+      - name
+      - updated_at
+      - workspace
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        organization:
+          type: integer
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          maxLength: 220
+          pattern: ^[-a-zA-Z0-9_]+$
+        timezone:
+          type: string
+          maxLength: 64
+        approval_workflow_enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - name
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Token-based authentication with required prefix "Token"

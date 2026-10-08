@@ -22,6 +22,7 @@ app_name = "omnipost_api"
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("connectors/", views.ConnectorsView.as_view(), name="connectors"),
     path("oauth/start/", views.OAuthStartView.as_view(), name="oauth-start"),
     path("oauth/complete/", views.OAuthCompleteView.as_view(), name="oauth-complete"),
     path("validate/", views.ValidateView.as_view(), name="validate"),

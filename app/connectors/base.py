@@ -136,6 +136,19 @@ class Connector(ABC):
     # authorize_url()/exchange_code() below, so the connector just reads them
     # from `extra` like any other caller-supplied value.
     requires_own_app: bool = False
+    # Credential keys a user can paste directly (POST /channels/ with
+    # `credentials`) for platforms with no OAuth flow, or as an alternative
+    # to it. Empty means "connect via OAuth only". Exposed by
+    # GET /connectors/ so the Connect modal renders the right fields.
+    credential_fields: tuple[str, ...] = ()
+    # Inputs authorize_url() needs from the user before the redirect can
+    # even be built (e.g. Mastodon's instance domain). Passed as `extra` to
+    # POST /oauth/start/.
+    oauth_extra_fields: tuple[str, ...] = ()
+
+    @property
+    def supports_oauth(self) -> bool:
+        return type(self).authorize_url is not Connector.authorize_url
 
     def validate(self, ctx: PublishContext) -> list[Finding]:
         """Capability-driven validation shared by every connector. Subclasses

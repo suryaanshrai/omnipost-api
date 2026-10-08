@@ -10,6 +10,8 @@ from ai import service
 from ai.errors import AIConfigurationError, AIProviderError
 from ai.errors import QuotaExceeded as AIQuotaExceeded
 from ai.quota import usage_for
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -18,7 +20,7 @@ from rest_framework.views import APIView
 
 from .models import MediaAsset, UsageCounter, Workspace
 from .permissions import workspaces_for_user
-from .serializers import MediaAssetSerializer
+from .serializers import MediaAssetSerializer, ValidateFindingSerializer
 from .serializers_ai import (
     AltTextRequestSerializer,
     GenerateImageRequestSerializer,
@@ -54,6 +56,23 @@ class GenerateVariantsView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=GenerateVariantsRequestSerializer,
+        responses=inline_serializer(
+            "GenerateVariantsResult",
+            fields={
+                "variants": inline_serializer(
+                    "GeneratedVariant",
+                    fields={
+                        "channel": drf_serializers.IntegerField(),
+                        "text": drf_serializers.CharField(),
+                        "findings": ValidateFindingSerializer(many=True),
+                    },
+                    many=True,
+                )
+            },
+        ),
+    )
     def post(self, request):
         payload = GenerateVariantsRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -87,6 +106,13 @@ class RepurposeView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=RepurposeRequestSerializer,
+        responses=inline_serializer(
+            "RepurposeResult",
+            fields={"results": drf_serializers.DictField(child=drf_serializers.CharField())},
+        ),
+    )
     def post(self, request):
         payload = RepurposeRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -117,6 +143,10 @@ class AltTextView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=AltTextRequestSerializer,
+        responses=inline_serializer("AltTextResult", fields={"alt_text": drf_serializers.CharField()}),
+    )
     def post(self, request):
         payload = AltTextRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -132,6 +162,7 @@ class GenerateImageView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=GenerateImageRequestSerializer, responses=MediaAssetSerializer)
     def post(self, request):
         payload = GenerateImageRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -160,6 +191,30 @@ class UsageView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        parameters=[OpenApiParameter("workspace", int, required=True)],
+        responses=inline_serializer(
+            "AIUsage",
+            fields={
+                "ai_text_generation": inline_serializer(
+                    "AIUsageCounter",
+                    fields={
+                        "committed": drf_serializers.IntegerField(),
+                        "reserved": drf_serializers.IntegerField(),
+                        "limit": drf_serializers.IntegerField(allow_null=True),
+                    },
+                ),
+                "ai_image_generation": inline_serializer(
+                    "AIUsageCounterImage",
+                    fields={
+                        "committed": drf_serializers.IntegerField(),
+                        "reserved": drf_serializers.IntegerField(),
+                        "limit": drf_serializers.IntegerField(allow_null=True),
+                    },
+                ),
+            },
+        ),
+    )
     def get(self, request):
         workspace_id = request.query_params.get("workspace")
         if not workspace_id:
