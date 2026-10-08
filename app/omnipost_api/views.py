@@ -6,7 +6,10 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import requests
+from connectors.errors import ConnectorError
 from django.conf import settings
+from django.core import signing
 from django.core.files.storage import default_storage
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
@@ -779,6 +782,10 @@ class OAuthStartView(APIView):
             )
         except oauth.MissingAppCredential as exc:
             raise ValidationError(str(exc)) from exc
+        except ConnectorError as exc:
+            raise ValidationError(exc.safe_detail) from exc
+        except requests.RequestException:
+            return _platform_unreachable()
         return Response({"authorize_url": result.authorize_url, "provider_state": result.provider_state})
 
 
@@ -813,6 +820,17 @@ class OAuthCompleteView(APIView):
             )
         except oauth.MissingAppCredential as exc:
             raise ValidationError(str(exc)) from exc
+        except signing.BadSignature as exc:
+            # A forged, truncated, or (SignatureExpired, a subclass) stale
+            # `state` — an expected outcome of a user returning to an old
+            # callback URL, not a server error.
+            raise ValidationError(
+                "This sign-in expired or wasn't started from OmniPost. Start the connection again."
+            ) from exc
+        except ConnectorError as exc:
+            raise ValidationError(exc.safe_detail) from exc
+        except requests.RequestException:
+            return _platform_unreachable()
         if not user_can_access_workspace(request.user, channel.workspace_id):
             # The signed state was valid but doesn't belong to a workspace
             # this user can access — shouldn't happen outside a forged
@@ -881,6 +899,13 @@ class ValidateView(APIView):
                 ],
             }
         )
+
+
+def _platform_unreachable() -> Response:
+    return Response(
+        {"detail": "Couldn't reach the platform to finish this step. Try again in a moment."},
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 def _parse_iso(value: str) -> datetime:
