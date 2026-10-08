@@ -9,7 +9,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers as drf_serializers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -38,6 +38,7 @@ from .serializers import (
     AppCredentialSerializer,
     BestTimeSerializer,
     BlackoutWindowSerializer,
+    CalendarEntrySerializer,
     ChannelSerializer,
     ConnectorSerializer,
     MediaAssetSerializer,
@@ -57,6 +58,25 @@ from .serializers import (
     WorkspaceSerializer,
 )
 
+WORKSPACE_FILTER = OpenApiParameter(
+    "workspace", int, required=False, description="Only rows belonging to this workspace (must be one of yours)."
+)
+
+
+def _int_param(request, name: str) -> int | None:
+    """An optional integer query param; a non-integer value is a 400, not a silent no-op."""
+    raw = request.query_params.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ValidationError({name: "Must be an integer."}) from None
+
+
+def _workspace_list(*extra: OpenApiParameter):
+    return extend_schema_view(list=extend_schema(parameters=[WORKSPACE_FILTER, *extra]))
+
 
 class WorkspaceScopedViewSet(viewsets.ModelViewSet):
     """Base for any viewset whose model has a direct `workspace` FK: scopes
@@ -69,7 +89,14 @@ class WorkspaceScopedViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.filter(**{f"{self.workspace_field}__in": workspaces_for_user(self.request.user)})
+        qs = qs.filter(**{f"{self.workspace_field}__in": workspaces_for_user(self.request.user)})
+        # `?workspace=<id>` narrows *within* the user's own workspaces — the
+        # membership scope above always applies first, so passing someone
+        # else's workspace id just yields an empty list.
+        workspace_id = _int_param(self.request, "workspace")
+        if workspace_id is not None:
+            qs = qs.filter(**{self.workspace_field: workspace_id})
+        return qs
 
     def perform_create(self, serializer):
         workspace = serializer.validated_data.get("workspace")
@@ -100,11 +127,13 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         Membership.objects.create(workspace=workspace, user=self.request.user, role=Membership.ROLE_OWNER)
 
 
+@_workspace_list()
 class MembershipViewSet(WorkspaceScopedViewSet):
     serializer_class = MembershipSerializer
     queryset = Membership.objects.select_related("user")
 
 
+@_workspace_list()
 class ChannelViewSet(WorkspaceScopedViewSet):
     serializer_class = ChannelSerializer
     queryset = Channel.objects.all()
@@ -137,6 +166,7 @@ class ChannelViewSet(WorkspaceScopedViewSet):
         )
 
 
+@_workspace_list()
 class MediaAssetViewSet(WorkspaceScopedViewSet):
     """Two ways to get a file into a MediaAsset:
     * multipart POST /api/v1/media/ with a `file` field — always available,
@@ -228,42 +258,63 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         return Response({"upload": presigned, "key": key})
 
 
+@_workspace_list()
 class VoiceProfileViewSet(WorkspaceScopedViewSet):
     serializer_class = VoiceProfileSerializer
     queryset = VoiceProfile.objects.all()
 
 
+@_workspace_list()
 class ProviderKeyViewSet(WorkspaceScopedViewSet):
     serializer_class = ProviderKeySerializer
     queryset = ProviderKey.objects.all()
 
 
+@_workspace_list()
 class AppCredentialViewSet(WorkspaceScopedViewSet):
     serializer_class = AppCredentialSerializer
     queryset = AppCredential.objects.all()
 
 
+@_workspace_list(OpenApiParameter("channel", int, required=False, description="Only this channel's slots."))
 class QueueSlotViewSet(WorkspaceScopedViewSet):
     serializer_class = QueueSlotSerializer
     queryset = QueueSlot.objects.all()
     workspace_field = "channel__workspace_id"
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        channel_id = _int_param(self.request, "channel")
+        if channel_id is not None:
+            qs = qs.filter(channel_id=channel_id)
+        return qs
 
+
+@_workspace_list()
 class BlackoutWindowViewSet(WorkspaceScopedViewSet):
     serializer_class = BlackoutWindowSerializer
     queryset = BlackoutWindow.objects.all()
 
 
+@_workspace_list()
 class RecurrenceRuleViewSet(WorkspaceScopedViewSet):
     serializer_class = RecurrenceRuleSerializer
     queryset = RecurrenceRule.objects.all()
 
 
+@_workspace_list(OpenApiParameter("post", int, required=False, description="Only this post's targets."))
 class PostTargetViewSet(WorkspaceScopedViewSet):
     serializer_class = PostTargetSerializer
     queryset = PostTarget.objects.all()
     workspace_field = "post__workspace_id"
     http_method_names = ["get", "head", "options"]  # mutated only via Post actions
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        post_id = _int_param(self.request, "post")
+        if post_id is not None:
+            qs = qs.filter(post_id=post_id)
+        return qs
 
     @extend_schema(responses=PostMetricSerializer(many=True))
     @action(detail=True, methods=["get"])
@@ -277,17 +328,40 @@ class PostTargetViewSet(WorkspaceScopedViewSet):
         return Response(PostMetricSerializer(metrics, many=True).data)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter("post", int, required=False, description="Only attempts for this post's targets."),
+            OpenApiParameter("post_target", int, required=False, description="Only attempts for this target."),
+        ]
+    )
+)
 class PublishAttemptViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only publish history. `?post=` backs the Posts screen's
+    per-post delivery log (one request per expanded post, instead of
+    paging through every attempt in the workspace to match target ids
+    client-side); `?post_target=` narrows to one target."""
+
     serializer_class = PublishAttemptSerializer
     permission_classes = [IsAuthenticated]
     queryset = PublishAttempt.objects.all()
 
     def get_queryset(self):
-        return super().get_queryset().filter(
+        qs = super().get_queryset().filter(
             post_target__post__workspace_id__in=workspaces_for_user(self.request.user)
         )
+        post_id = _int_param(self.request, "post")
+        if post_id is not None:
+            qs = qs.filter(post_target__post_id=post_id)
+        target_id = _int_param(self.request, "post_target")
+        if target_id is not None:
+            qs = qs.filter(post_target_id=target_id)
+        return qs
 
 
+@_workspace_list(
+    OpenApiParameter("status", str, required=False, description="Comma-separated statuses, e.g. `draft,failed`.")
+)
 class PostViewSet(WorkspaceScopedViewSet):
     serializer_class = PostSerializer
     queryset = Post.objects.prefetch_related("targets__channel")
@@ -297,14 +371,12 @@ class PostViewSet(WorkspaceScopedViewSet):
         # enough ad-hoc filtering that the frontend's Drafts/Posts split isn't
         # forced to fetch every post in the workspace and filter client-side.
         qs = super().get_queryset()
+        # (`?workspace=` is handled by WorkspaceScopedViewSet.)
         status_param = self.request.query_params.get("status")
         if status_param:
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
             if statuses:
                 qs = qs.filter(status__in=statuses)
-        workspace_param = self.request.query_params.get("workspace")
-        if workspace_param:
-            qs = qs.filter(workspace_id=workspace_param)
         return qs
 
     def perform_create(self, serializer):
@@ -460,7 +532,7 @@ class PostViewSet(WorkspaceScopedViewSet):
             OpenApiParameter("start", str, required=True, description="ISO 8601, inclusive"),
             OpenApiParameter("end", str, required=True, description="ISO 8601, exclusive"),
         ],
-        responses=PostTargetSerializer(many=True),
+        responses=CalendarEntrySerializer(many=True),
     )
     @action(detail=False, methods=["get"])
     def calendar(self, request):
@@ -473,7 +545,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         end_raw = request.query_params.get("end")
         if not workspace_id or not start_raw or not end_raw:
             raise ValidationError("workspace, start, and end are all required.")
-        if int(workspace_id) not in workspaces_for_user(request.user):
+        if _int_param(request, "workspace") not in workspaces_for_user(request.user):
             raise PermissionDenied("You are not a member of this workspace.")
 
         start = _parse_iso(start_raw)
@@ -484,7 +556,7 @@ class PostViewSet(WorkspaceScopedViewSet):
             .select_related("post", "channel")
             .order_by("run_at")
         )
-        return Response(PostTargetSerializer(targets, many=True).data)
+        return Response(CalendarEntrySerializer(targets, many=True).data)
 
     @extend_schema(
         request=inline_serializer(

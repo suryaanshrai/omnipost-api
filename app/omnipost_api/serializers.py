@@ -222,6 +222,7 @@ class PostTargetPartSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 
+
 class PostTargetWriteSerializer(serializers.ModelSerializer):
     # Write-only: a thread/drip's ordered posts. Only meaningful for a
     # connector whose capabilities declare supports_threads — see
@@ -265,6 +266,19 @@ class PostTargetSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class CalendarEntrySerializer(PostTargetSerializer):
+    """One PostTarget as the calendar draws it: the target plus just enough
+    of its parent post (kind, text, status) to label the entry, so the
+    calendar doesn't need a second request per post to say what's going out."""
+
+    post_kind = serializers.CharField(source="post.kind", read_only=True)
+    post_text = serializers.CharField(source="post.base_text", read_only=True)
+    post_status = serializers.CharField(source="post.status", read_only=True)
+
+    class Meta(PostTargetSerializer.Meta):
+        fields = [*PostTargetSerializer.Meta.fields, "post_kind", "post_text", "post_status"]
 
 
 class PostMetricSerializer(serializers.ModelSerializer):

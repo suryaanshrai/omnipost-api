@@ -167,6 +167,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - app-credentials
       security:
@@ -700,6 +705,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - blackout-windows
       security:
@@ -888,6 +898,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - channels
       security:
@@ -1143,6 +1158,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - media
       security:
@@ -1382,6 +1402,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - memberships
       security:
@@ -1629,6 +1654,16 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: post
+        schema:
+          type: integer
+        description: Only this post's targets.
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - post-targets
       security:
@@ -1728,6 +1763,16 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Comma-separated statuses, e.g. `draft,failed`.
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - posts
       security:
@@ -2180,7 +2225,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedPostTargetList'
+                $ref: '#/components/schemas/PaginatedCalendarEntryList'
           description: ''
   /posts/import-csv/:
     post:
@@ -2236,6 +2281,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - provider-keys
       security:
@@ -2406,6 +2456,11 @@ paths:
   /publish-attempts/:
     get:
       operationId: publish_attempts_list
+      description: |-
+        Read-only publish history. `?post=` backs the Posts screen's
+        per-post delivery log (one request per expanded post, instead of
+        paging through every attempt in the workspace to match target ids
+        client-side); `?post_target=` narrows to one target.
       parameters:
       - name: limit
         required: false
@@ -2419,6 +2474,16 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: post
+        schema:
+          type: integer
+        description: Only attempts for this post's targets.
+      - in: query
+        name: post_target
+        schema:
+          type: integer
+        description: Only attempts for this target.
       tags:
       - publish-attempts
       security:
@@ -2434,6 +2499,11 @@ paths:
   /publish-attempts/{id}/:
     get:
       operationId: publish_attempts_retrieve
+      description: |-
+        Read-only publish history. `?post=` backs the Posts screen's
+        per-post delivery log (one request per expanded post, instead of
+        paging through every attempt in the workspace to match target ids
+        client-side); `?post_target=` narrows to one target.
       parameters:
       - in: path
         name: id
@@ -2462,6 +2532,11 @@ paths:
         API had no such scoping at all — any authenticated user could read or
         write any other user's rows by id.
       parameters:
+      - in: query
+        name: channel
+        schema:
+          type: integer
+        description: Only this channel's slots.
       - name: limit
         required: false
         in: query
@@ -2474,6 +2549,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - queue-slots
       security:
@@ -2662,6 +2742,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - recurrence-rules
       security:
@@ -2883,6 +2968,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
       tags:
       - voice-profiles
       security:
@@ -3378,6 +3468,90 @@ components:
     BlankEnum:
       enum:
       - ''
+    CalendarEntry:
+      type: object
+      description: |-
+        One PostTarget as the calendar draws it: the target plus just enough
+        of its parent post (kind, text, status) to label the entry, so the
+        calendar doesn't need a second request per post to say what's going out.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post:
+          type: integer
+        channel:
+          type: integer
+        format:
+          oneOf:
+          - $ref: '#/components/schemas/PostKindEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        text_override:
+          type: string
+        media:
+          type: array
+          items:
+            type: integer
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostTargetPart'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PostTargetStatusEnum'
+          readOnly: true
+        run_at:
+          type: string
+          format: date-time
+          nullable: true
+        remote_id:
+          type: string
+          readOnly: true
+        permalink:
+          type: string
+          format: uri
+          readOnly: true
+        published_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        epoch:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        post_kind:
+          type: string
+          readOnly: true
+        post_text:
+          type: string
+          readOnly: true
+        post_status:
+          type: string
+          readOnly: true
+      required:
+      - channel
+      - created_at
+      - epoch
+      - id
+      - parts
+      - permalink
+      - post
+      - post_kind
+      - post_status
+      - post_text
+      - published_at
+      - remote_id
+      - status
+      - updated_at
     Channel:
       type: object
       properties:
@@ -3853,6 +4027,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BlackoutWindow'
+    PaginatedCalendarEntryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarEntry'
     PaginatedChannelList:
       type: object
       required:
