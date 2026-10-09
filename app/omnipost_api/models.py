@@ -131,6 +131,7 @@ class Channel(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["workspace", "connector_slug"])]
+        ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"{self.display_name} ({self.connector_slug})"
@@ -188,6 +189,9 @@ class MediaAsset(models.Model):
     duration_s = models.FloatField(null=True, blank=True)
     alt_text = models.CharField(max_length=1000, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"{self.kind}:{self.file.name}"
@@ -267,6 +271,7 @@ class Post(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["workspace", "status"])]
+        ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"Post #{self.pk} ({self.status})"
@@ -316,6 +321,7 @@ class PostTarget(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["channel", "status", "run_at"])]
+        ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"PostTarget #{self.pk} -> {self.channel} ({self.status})"
@@ -398,6 +404,7 @@ class PublishAttempt(models.Model):
     class Meta:
         indexes = [models.Index(fields=["status", "run_at"])]
         unique_together = [("post_target", "epoch", "attempt_number")]
+        ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"Attempt #{self.attempt_number} for {self.post_target} ({self.status})"

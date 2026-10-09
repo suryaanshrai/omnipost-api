@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from .models import (
     AppCredential,
@@ -38,6 +39,22 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
+    # Both optional on create: WorkspaceViewSet.perform_create() derives a
+    # fresh Organization and a unique slug from `name` when either is
+    # omitted, so a first-time user can self-serve "create my workspace"
+    # with a name alone. Neither model field allows null/blank, so
+    # ModelSerializer would otherwise mark both required — which, until
+    # this override, silently defeated that fallback: a POST with only
+    # `name` was rejected by validation before perform_create ever ran.
+    organization = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all(), required=False)
+    # Explicitly declaring this field (rather than letting ModelSerializer
+    # auto-generate it) bypasses DRF's automatic UniqueValidator injection
+    # for unique model fields, so it's added back by hand — a duplicate
+    # slug should come back as a normal 400, not a database IntegrityError.
+    slug = serializers.SlugField(
+        max_length=220, required=False, validators=[UniqueValidator(queryset=Workspace.objects.all())]
+    )
+
     class Meta:
         model = Workspace
         fields = ["id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "created_at"]
@@ -126,6 +143,62 @@ class MediaConfirmRequestSerializer(serializers.Serializer):
     alt_text = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
 
 
+class MediaRuleSerializer(serializers.Serializer):
+    """Read-only view of connectors.capabilities.MediaRule — not a
+    ModelSerializer, since Capabilities lives in code (connectors/*), not the
+    database. Backs GET /connectors/, so the frontend's composer and Connect
+    modal validate against the same rules Connector.validate() enforces
+    server-side, instead of a hand-maintained table drifting out of sync."""
+
+    kinds = serializers.ListField(child=serializers.CharField())
+    max_count = serializers.IntegerField()
+    max_size_mb = serializers.FloatField(allow_null=True)
+    max_duration_s = serializers.FloatField(allow_null=True)
+    min_duration_s = serializers.FloatField(allow_null=True)
+    allowed_aspect_ratios = serializers.ListField(child=serializers.CharField())
+    allowed_mime_types = serializers.ListField(child=serializers.CharField())
+
+
+class ConnectorSerializer(serializers.Serializer):
+    """Read-only view of one connectors.registry entry: its slug plus the
+    capability/gating facts the frontend needs and can't otherwise discover
+    (see GET /connectors/ in views.py)."""
+
+    slug = serializers.CharField()
+    display_name = serializers.CharField()
+    requires_own_app = serializers.BooleanField()
+    supports_oauth = serializers.BooleanField()
+    credential_fields = serializers.ListField(child=serializers.CharField())
+    oauth_extra_fields = serializers.ListField(child=serializers.CharField())
+    max_text_length = serializers.IntegerField(allow_null=True)
+    supports_link = serializers.BooleanField()
+    supports_alt_text = serializers.BooleanField()
+    supports_threads = serializers.BooleanField()
+    supports_scheduling_native = serializers.BooleanField()
+    post_kinds = serializers.ListField(child=serializers.CharField())
+    media = MediaRuleSerializer(many=True)
+
+
+class ValidateFindingSerializer(serializers.Serializer):
+    """One connectors.errors.Finding — shared by POST /validate/ and the AI
+    variant generator, which both report per-channel rule findings."""
+
+    code = serializers.CharField()
+    message = serializers.CharField()
+    blocking = serializers.BooleanField()
+    field = serializers.CharField(allow_null=True)
+
+
+class BestTimeSerializer(serializers.Serializer):
+    """Read-only shape of one services.best_times.Suggestion — backs
+    GET /channels/{id}/best-times/."""
+
+    weekday = serializers.IntegerField()
+    hour = serializers.IntegerField()
+    sample_size = serializers.IntegerField()
+    avg_engagement = serializers.FloatField()
+
+
 class ValidateRequestSerializer(serializers.Serializer):
     channel = serializers.PrimaryKeyRelatedField(queryset=Channel.objects.all())
     text = serializers.CharField(allow_blank=True, default="")
@@ -147,6 +220,7 @@ class PostTargetPartSerializer(serializers.ModelSerializer):
         model = PostTargetPart
         fields = ["id", "sequence", "text", "media", "delay_after_s"]
         read_only_fields = ["id"]
+
 
 
 class PostTargetWriteSerializer(serializers.ModelSerializer):
@@ -194,6 +268,19 @@ class PostTargetSerializer(serializers.ModelSerializer):
         ]
 
 
+class CalendarEntrySerializer(PostTargetSerializer):
+    """One PostTarget as the calendar draws it: the target plus just enough
+    of its parent post (kind, text, status) to label the entry, so the
+    calendar doesn't need a second request per post to say what's going out."""
+
+    post_kind = serializers.CharField(source="post.kind", read_only=True)
+    post_text = serializers.CharField(source="post.base_text", read_only=True)
+    post_status = serializers.CharField(source="post.status", read_only=True)
+
+    class Meta(PostTargetSerializer.Meta):
+        fields = [*PostTargetSerializer.Meta.fields, "post_kind", "post_text", "post_status"]
+
+
 class PostMetricSerializer(serializers.ModelSerializer):
     class Meta:
         model = PostMetric
@@ -234,17 +321,49 @@ class PostSerializer(serializers.ModelSerializer):
         if base_media:
             post.base_media.set(base_media)
         for spec in target_specs:
-            media = spec.pop("media", [])
-            parts = spec.pop("parts", [])
-            target = PostTarget.objects.create(post=post, **spec)
-            if media:
-                target.media.set(media)
-            for part_spec in parts:
-                part_media = part_spec.pop("media", [])
-                part = PostTargetPart.objects.create(post_target=target, **part_spec)
-                if part_media:
-                    part.media.set(part_media)
+            self._create_target(post, spec)
         return post
+
+    def update(self, instance, validated_data):
+        # target_specs is write-only and, until now, create-only: a draft's
+        # channel targets couldn't be changed after the Post was made, so a
+        # composer/drafts screen had nowhere to send "actually, also post
+        # this to LinkedIn". Omitting target_specs from the PATCH body leaves
+        # existing targets untouched, same as any other field; passing it
+        # replaces the full set (mirrors create()'s all-or-nothing shape).
+        target_specs = validated_data.pop("target_specs", None)
+        base_media = validated_data.pop("base_media", None)
+        if target_specs is not None and instance.status not in (Post.STATUS_DRAFT, Post.STATUS_FAILED):
+            # Targets carry cascade-deleted PublishAttempt/PostMetric history
+            # once a post has actually gone out — replacing them on anything
+            # past draft/failed would silently destroy that record.
+            raise serializers.ValidationError(
+                {"target_specs": f"Cannot change targets on a post in status '{instance.status}'."}
+            )
+        instance = super().update(instance, validated_data)
+        if base_media is not None:
+            instance.base_media.set(base_media)
+        if target_specs is not None:
+            instance.targets.all().delete()
+            for spec in target_specs:
+                self._create_target(instance, spec)
+        return instance
+
+    @staticmethod
+    def _create_target(post, spec):
+        spec = dict(spec)
+        media = spec.pop("media", [])
+        parts = spec.pop("parts", [])
+        target = PostTarget.objects.create(post=post, **spec)
+        if media:
+            target.media.set(media)
+        for part_spec in parts:
+            part_spec = dict(part_spec)
+            part_media = part_spec.pop("media", [])
+            part = PostTargetPart.objects.create(post_target=target, **part_spec)
+            if part_media:
+                part.media.set(part_media)
+        return target
 
 
 class PublishAttemptSerializer(serializers.ModelSerializer):

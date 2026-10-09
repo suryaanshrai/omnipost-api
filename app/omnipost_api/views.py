@@ -6,9 +6,14 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import requests
+from connectors.errors import ConnectorError
 from django.conf import settings
+from django.core import signing
 from django.core.files.storage import default_storage
 from django.utils import timezone
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
+from rest_framework import serializers as drf_serializers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -34,8 +39,11 @@ from .models import (
 from .permissions import user_can_access_workspace, workspaces_for_user
 from .serializers import (
     AppCredentialSerializer,
+    BestTimeSerializer,
     BlackoutWindowSerializer,
+    CalendarEntrySerializer,
     ChannelSerializer,
+    ConnectorSerializer,
     MediaAssetSerializer,
     MediaConfirmRequestSerializer,
     MediaPresignRequestSerializer,
@@ -47,10 +55,30 @@ from .serializers import (
     PublishAttemptSerializer,
     QueueSlotSerializer,
     RecurrenceRuleSerializer,
+    ValidateFindingSerializer,
     ValidateRequestSerializer,
     VoiceProfileSerializer,
     WorkspaceSerializer,
 )
+
+WORKSPACE_FILTER = OpenApiParameter(
+    "workspace", int, required=False, description="Only rows belonging to this workspace (must be one of yours)."
+)
+
+
+def _int_param(request, name: str) -> int | None:
+    """An optional integer query param; a non-integer value is a 400, not a silent no-op."""
+    raw = request.query_params.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ValidationError({name: "Must be an integer."}) from None
+
+
+def _workspace_list(*extra: OpenApiParameter):
+    return extend_schema_view(list=extend_schema(parameters=[WORKSPACE_FILTER, *extra]))
 
 
 class WorkspaceScopedViewSet(viewsets.ModelViewSet):
@@ -64,7 +92,14 @@ class WorkspaceScopedViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.filter(**{f"{self.workspace_field}__in": workspaces_for_user(self.request.user)})
+        qs = qs.filter(**{f"{self.workspace_field}__in": workspaces_for_user(self.request.user)})
+        # `?workspace=<id>` narrows *within* the user's own workspaces — the
+        # membership scope above always applies first, so passing someone
+        # else's workspace id just yields an empty list.
+        workspace_id = _int_param(self.request, "workspace")
+        if workspace_id is not None:
+            qs = qs.filter(**{self.workspace_field: workspace_id})
+        return qs
 
     def perform_create(self, serializer):
         workspace = serializer.validated_data.get("workspace")
@@ -83,20 +118,25 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from .models import Organization
+        from .services.provisioning import unique_workspace_slug
 
         organization = serializer.validated_data.get("organization")
         if organization is None:
             organization = Organization.objects.create(name=serializer.validated_data["name"])
             serializer.validated_data["organization"] = organization
+        if not serializer.validated_data.get("slug"):
+            serializer.validated_data["slug"] = unique_workspace_slug(serializer.validated_data["name"])
         workspace = serializer.save()
         Membership.objects.create(workspace=workspace, user=self.request.user, role=Membership.ROLE_OWNER)
 
 
+@_workspace_list()
 class MembershipViewSet(WorkspaceScopedViewSet):
     serializer_class = MembershipSerializer
     queryset = Membership.objects.select_related("user")
 
 
+@_workspace_list()
 class ChannelViewSet(WorkspaceScopedViewSet):
     serializer_class = ChannelSerializer
     queryset = Channel.objects.all()
@@ -106,6 +146,7 @@ class ChannelViewSet(WorkspaceScopedViewSet):
         serializer.instance.created_by = self.request.user
         serializer.instance.save(update_fields=["created_by"])
 
+    @extend_schema(responses=BestTimeSerializer(many=True))
     @action(detail=True, methods=["get"], url_path="best-times")
     def best_times(self, request, pk=None):
         """Best-time-to-post suggestions derived from this channel's own
@@ -128,6 +169,7 @@ class ChannelViewSet(WorkspaceScopedViewSet):
         )
 
 
+@_workspace_list()
 class MediaAssetViewSet(WorkspaceScopedViewSet):
     """Two ways to get a file into a MediaAsset:
     * multipart POST /api/v1/media/ with a `file` field — always available,
@@ -219,43 +261,65 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         return Response({"upload": presigned, "key": key})
 
 
+@_workspace_list()
 class VoiceProfileViewSet(WorkspaceScopedViewSet):
     serializer_class = VoiceProfileSerializer
     queryset = VoiceProfile.objects.all()
 
 
+@_workspace_list()
 class ProviderKeyViewSet(WorkspaceScopedViewSet):
     serializer_class = ProviderKeySerializer
     queryset = ProviderKey.objects.all()
 
 
+@_workspace_list()
 class AppCredentialViewSet(WorkspaceScopedViewSet):
     serializer_class = AppCredentialSerializer
     queryset = AppCredential.objects.all()
 
 
+@_workspace_list(OpenApiParameter("channel", int, required=False, description="Only this channel's slots."))
 class QueueSlotViewSet(WorkspaceScopedViewSet):
     serializer_class = QueueSlotSerializer
     queryset = QueueSlot.objects.all()
     workspace_field = "channel__workspace_id"
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        channel_id = _int_param(self.request, "channel")
+        if channel_id is not None:
+            qs = qs.filter(channel_id=channel_id)
+        return qs
 
+
+@_workspace_list()
 class BlackoutWindowViewSet(WorkspaceScopedViewSet):
     serializer_class = BlackoutWindowSerializer
     queryset = BlackoutWindow.objects.all()
 
 
+@_workspace_list()
 class RecurrenceRuleViewSet(WorkspaceScopedViewSet):
     serializer_class = RecurrenceRuleSerializer
     queryset = RecurrenceRule.objects.all()
 
 
+@_workspace_list(OpenApiParameter("post", int, required=False, description="Only this post's targets."))
 class PostTargetViewSet(WorkspaceScopedViewSet):
     serializer_class = PostTargetSerializer
     queryset = PostTarget.objects.all()
     workspace_field = "post__workspace_id"
     http_method_names = ["get", "head", "options"]  # mutated only via Post actions
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        post_id = _int_param(self.request, "post")
+        if post_id is not None:
+            qs = qs.filter(post_id=post_id)
+        return qs
+
+    @extend_schema(responses=PostMetricSerializer(many=True))
     @action(detail=True, methods=["get"])
     def performance(self, request, pk=None):
         """Full engagement history for this target, newest first — see
@@ -267,20 +331,56 @@ class PostTargetViewSet(WorkspaceScopedViewSet):
         return Response(PostMetricSerializer(metrics, many=True).data)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter("post", int, required=False, description="Only attempts for this post's targets."),
+            OpenApiParameter("post_target", int, required=False, description="Only attempts for this target."),
+        ]
+    )
+)
 class PublishAttemptViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only publish history. `?post=` backs the Posts screen's
+    per-post delivery log (one request per expanded post, instead of
+    paging through every attempt in the workspace to match target ids
+    client-side); `?post_target=` narrows to one target."""
+
     serializer_class = PublishAttemptSerializer
     permission_classes = [IsAuthenticated]
     queryset = PublishAttempt.objects.all()
 
     def get_queryset(self):
-        return super().get_queryset().filter(
+        qs = super().get_queryset().filter(
             post_target__post__workspace_id__in=workspaces_for_user(self.request.user)
         )
+        post_id = _int_param(self.request, "post")
+        if post_id is not None:
+            qs = qs.filter(post_target__post_id=post_id)
+        target_id = _int_param(self.request, "post_target")
+        if target_id is not None:
+            qs = qs.filter(post_target_id=target_id)
+        return qs
 
 
+@_workspace_list(
+    OpenApiParameter("status", str, required=False, description="Comma-separated statuses, e.g. `draft,failed`.")
+)
 class PostViewSet(WorkspaceScopedViewSet):
     serializer_class = PostSerializer
-    queryset = Post.objects.prefetch_related("targets")
+    queryset = Post.objects.prefetch_related("targets__channel")
+
+    def get_queryset(self):
+        # No django-filter in this project (see WorkspaceScopedViewSet) — just
+        # enough ad-hoc filtering that the frontend's Drafts/Posts split isn't
+        # forced to fetch every post in the workspace and filter client-side.
+        qs = super().get_queryset()
+        # (`?workspace=` is handled by WorkspaceScopedViewSet.)
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            statuses = [s.strip() for s in status_param.split(",") if s.strip()]
+            if statuses:
+                qs = qs.filter(status__in=statuses)
+        return qs
 
     def perform_create(self, serializer):
         super().perform_create(serializer)
@@ -299,6 +399,12 @@ class PostViewSet(WorkspaceScopedViewSet):
         if post.status not in allowed:
             raise ValidationError(f"Cannot schedule a post in status '{post.status}'.")
 
+    @extend_schema(
+        request=inline_serializer(
+            "ScheduleRequest", fields={"run_at": drf_serializers.DateTimeField(required=False)}
+        ),
+        responses=PostSerializer,
+    )
     @action(detail=True, methods=["post"])
     def schedule(self, request, pk=None):
         """Schedules every target on this post to the same run_at. `run_at`
@@ -325,6 +431,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.save(update_fields=["status", "scheduled_for", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
+    @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"])
     def queue(self, request, pk=None):
         """Schedules each target via its own channel's next open QueueSlot
@@ -355,6 +462,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.save(update_fields=["status", "scheduled_for", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
+    @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"], url_path="submit-for-review")
     def submit_for_review(self, request, pk=None):
         post = self.get_object()
@@ -364,6 +472,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.save(update_fields=["status", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
+    @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
         post = self.get_object()
@@ -373,6 +482,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.save(update_fields=["status", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
+    @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"], url_path="request-changes")
     def request_changes(self, request, pk=None):
         """Sends an in-review post back to draft for edits."""
@@ -383,6 +493,19 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.save(update_fields=["status", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        responses=inline_serializer(
+            "PostPerformanceEntry",
+            fields={
+                "post_target": drf_serializers.IntegerField(),
+                "channel": drf_serializers.IntegerField(),
+                "connector_slug": drf_serializers.CharField(),
+                "permalink": drf_serializers.CharField(),
+                "metric": PostMetricSerializer(),
+            },
+            many=True,
+        )
+    )
     @action(detail=True, methods=["get"])
     def performance(self, request, pk=None):
         """Per-post performance: each published target's latest engagement
@@ -406,6 +529,14 @@ class PostViewSet(WorkspaceScopedViewSet):
             )
         return Response(result)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("workspace", int, required=True),
+            OpenApiParameter("start", str, required=True, description="ISO 8601, inclusive"),
+            OpenApiParameter("end", str, required=True, description="ISO 8601, exclusive"),
+        ],
+        responses=CalendarEntrySerializer(many=True),
+    )
     @action(detail=False, methods=["get"])
     def calendar(self, request):
         """GET ?workspace=<id>&start=<iso>&end=<iso> -> every PostTarget in
@@ -417,7 +548,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         end_raw = request.query_params.get("end")
         if not workspace_id or not start_raw or not end_raw:
             raise ValidationError("workspace, start, and end are all required.")
-        if int(workspace_id) not in workspaces_for_user(request.user):
+        if _int_param(request, "workspace") not in workspaces_for_user(request.user):
             raise PermissionDenied("You are not a member of this workspace.")
 
         start = _parse_iso(start_raw)
@@ -428,8 +559,29 @@ class PostViewSet(WorkspaceScopedViewSet):
             .select_related("post", "channel")
             .order_by("run_at")
         )
-        return Response(PostTargetSerializer(targets, many=True).data)
+        return Response(CalendarEntrySerializer(targets, many=True).data)
 
+    @extend_schema(
+        request=inline_serializer(
+            "ImportCsvRequest",
+            fields={
+                "workspace": drf_serializers.IntegerField(),
+                "file": drf_serializers.FileField(required=False),
+                "csv_text": drf_serializers.CharField(required=False),
+            },
+        ),
+        responses=inline_serializer(
+            "ImportCsvResult",
+            fields={
+                "created": drf_serializers.IntegerField(),
+                "errors": inline_serializer(
+                    "ImportCsvRowError",
+                    fields={"row": drf_serializers.IntegerField(), "detail": drf_serializers.JSONField()},
+                    many=True,
+                ),
+            },
+        ),
+    )
     @action(detail=False, methods=["post"], url_path="import-csv")
     def import_csv(self, request):
         """Bulk-schedules posts from a CSV: columns `text`, `channel_id`, and
@@ -493,6 +645,14 @@ class PostViewSet(WorkspaceScopedViewSet):
 
         return Response({"created": created, "errors": errors}, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        request=None,
+        parameters=[OpenApiParameter("target_id", int, location=OpenApiParameter.PATH)],
+        responses=inline_serializer(
+            "RetryTargetResult",
+            fields={**PostTargetSerializer().get_fields(), "attempt_id": drf_serializers.IntegerField()},
+        ),
+    )
     @action(detail=True, methods=["post"], url_path="retry-target/(?P<target_id>[^/.]+)")
     def retry_target(self, request, pk=None, target_id=None):
         """Retries one failed/canceled target with a fresh epoch, so its
@@ -513,6 +673,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         attempt = schedule_post_target(target, run_at=timezone.now())
         return Response(PostTargetSerializer(target).data | {"attempt_id": attempt.pk}, status=status.HTTP_200_OK)
 
+    @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         post = self.get_object()
@@ -524,6 +685,56 @@ class PostViewSet(WorkspaceScopedViewSet):
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
 
+class ConnectorsView(APIView):
+    """GET -> every registered connector's capabilities and gating info.
+    Previously nowhere for the frontend to read this from at all: the old UI
+    hardcoded a 3-platform table (Instagram/Facebook/LinkedIn) that was
+    already wrong the day the backend grew to eleven connectors. This is the
+    single source of truth `connectors.registry` — same data
+    Connector.validate() enforces server-side — so the Connections screen and
+    composer can't drift from it the way the hardcoded table did."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=ConnectorSerializer(many=True))
+    def get(self, request):
+        from connectors import registry
+
+        connectors = []
+        for slug in registry.all_slugs():
+            connector = registry.get(slug)
+            caps = connector.capabilities
+            connectors.append(
+                {
+                    "slug": caps.slug,
+                    "display_name": caps.display_name,
+                    "requires_own_app": connector.requires_own_app,
+                    "supports_oauth": connector.supports_oauth,
+                    "credential_fields": list(connector.credential_fields),
+                    "oauth_extra_fields": list(connector.oauth_extra_fields),
+                    "max_text_length": caps.max_text_length,
+                    "supports_link": caps.supports_link,
+                    "supports_alt_text": caps.supports_alt_text,
+                    "supports_threads": caps.supports_threads,
+                    "supports_scheduling_native": caps.supports_scheduling_native,
+                    "post_kinds": list(caps.post_kinds),
+                    "media": [
+                        {
+                            "kinds": list(rule.kinds),
+                            "max_count": rule.max_count,
+                            "max_size_mb": rule.max_size_mb,
+                            "max_duration_s": rule.max_duration_s,
+                            "min_duration_s": rule.min_duration_s,
+                            "allowed_aspect_ratios": list(rule.allowed_aspect_ratios),
+                            "allowed_mime_types": list(rule.allowed_mime_types),
+                        }
+                        for rule in caps.media
+                    ],
+                }
+            )
+        return Response(ConnectorSerializer(connectors, many=True).data)
+
+
 class OAuthStartView(APIView):
     """POST {connector_slug, workspace, display_name, redirect_uri, extra}
     -> {authorize_url, provider_state}. The frontend redirects the browser to
@@ -532,6 +743,22 @@ class OAuthStartView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=inline_serializer(
+            "OAuthStartRequest",
+            fields={
+                "connector_slug": drf_serializers.CharField(),
+                "workspace": drf_serializers.IntegerField(),
+                "display_name": drf_serializers.CharField(required=False),
+                "redirect_uri": drf_serializers.CharField(),
+                "extra": drf_serializers.JSONField(required=False),
+            },
+        ),
+        responses=inline_serializer(
+            "OAuthStartResult",
+            fields={"authorize_url": drf_serializers.CharField(), "provider_state": drf_serializers.CharField()},
+        ),
+    )
     def post(self, request):
         from .services import oauth
 
@@ -555,12 +782,28 @@ class OAuthStartView(APIView):
             )
         except oauth.MissingAppCredential as exc:
             raise ValidationError(str(exc)) from exc
+        except ConnectorError as exc:
+            raise ValidationError(exc.safe_detail) from exc
+        except requests.RequestException:
+            return _platform_unreachable()
         return Response({"authorize_url": result.authorize_url, "provider_state": result.provider_state})
 
 
 class OAuthCompleteView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=inline_serializer(
+            "OAuthCompleteRequest",
+            fields={
+                "connector_slug": drf_serializers.CharField(),
+                "code": drf_serializers.CharField(),
+                "redirect_uri": drf_serializers.CharField(),
+                "state": drf_serializers.CharField(),
+            },
+        ),
+        responses=ChannelSerializer,
+    )
     def post(self, request):
         from .services import oauth
 
@@ -577,6 +820,17 @@ class OAuthCompleteView(APIView):
             )
         except oauth.MissingAppCredential as exc:
             raise ValidationError(str(exc)) from exc
+        except signing.BadSignature as exc:
+            # A forged, truncated, or (SignatureExpired, a subclass) stale
+            # `state` — an expected outcome of a user returning to an old
+            # callback URL, not a server error.
+            raise ValidationError(
+                "This sign-in expired or wasn't started from OmniPost. Start the connection again."
+            ) from exc
+        except ConnectorError as exc:
+            raise ValidationError(exc.safe_detail) from exc
+        except requests.RequestException:
+            return _platform_unreachable()
         if not user_can_access_workspace(request.user, channel.workspace_id):
             # The signed state was valid but doesn't belong to a workspace
             # this user can access — shouldn't happen outside a forged
@@ -598,6 +852,17 @@ class ValidateView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=ValidateRequestSerializer,
+        responses=inline_serializer(
+            "ValidateResult",
+            fields={
+                "channel": drf_serializers.IntegerField(),
+                "ok": drf_serializers.BooleanField(),
+                "findings": ValidateFindingSerializer(many=True),
+            },
+        ),
+    )
     def post(self, request):
         from connectors.base import ChannelCredentials, PublishContext
         from connectors.registry import get as get_connector
@@ -634,6 +899,13 @@ class ValidateView(APIView):
                 ],
             }
         )
+
+
+def _platform_unreachable() -> Response:
+    return Response(
+        {"detail": "Couldn't reach the platform to finish this step. Try again in a moment."},
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 def _parse_iso(value: str) -> datetime:

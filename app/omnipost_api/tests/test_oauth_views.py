@@ -1,3 +1,4 @@
+import pytest
 import responses
 from rest_framework.test import APIClient
 
@@ -122,3 +123,89 @@ def test_oauth_start_for_byo_app_connector_injects_workspace_app_credential(db, 
     )
     assert response.status_code == 200
     assert "client_id=workspace-cid" in response.data["authorize_url"]
+
+
+@pytest.mark.parametrize("connector_slug", ["facebook", "linkedin", "mastodon"])
+def test_oauth_complete_with_a_forged_state_is_a_400_not_a_500(db, django_user_model, connector_slug):
+    """A user landing on a stale or hand-edited callback URL sends a `state`
+    that fails signature verification — that's an expected, user-facing
+    outcome (start again), so it must come back as a 400 with a message,
+    never an unhandled BadSignature 500. Covers connectors that pass the
+    state through untouched (facebook, linkedin) and one that wraps it
+    in its own signed layer (mastodon)."""
+    user = django_user_model.objects.create_user(username="dana", password="x")
+
+    response = _client_for(user).post(
+        "/oauth/complete/",
+        {"connector_slug": connector_slug, "code": "c", "redirect_uri": "https://app.example.com/cb", "state": "xyz"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data
+    assert not Channel.objects.exists()
+
+
+@responses.activate
+def test_oauth_complete_surfaces_a_failed_token_exchange_as_a_400(db, django_user_model):
+    user = django_user_model.objects.create_user(username="dana", password="x")
+    workspace = user.memberships.get().workspace
+    client = _client_for(user)
+    responses.add(
+        responses.POST,
+        "https://mastodon.social/api/v1/apps",
+        json={"client_id": "cid", "client_secret": "csecret"},
+        status=200,
+    )
+    start = client.post(
+        "/oauth/start/",
+        {
+            "connector_slug": "mastodon",
+            "workspace": workspace.pk,
+            "redirect_uri": "https://app.example.com/callback",
+            "extra": {"instance_domain": "mastodon.social"},
+        },
+        format="json",
+    )
+    responses.add(responses.POST, "https://mastodon.social/oauth/token", json={"error": "invalid_grant"}, status=400)
+
+    response = client.post(
+        "/oauth/complete/",
+        {
+            "connector_slug": "mastodon",
+            "code": "used-code",
+            "redirect_uri": "https://app.example.com/callback",
+            "state": start.data["provider_state"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert not Channel.objects.exists()
+
+
+@responses.activate
+def test_oauth_start_against_an_unreachable_instance_is_a_502(db, django_user_model):
+    import requests
+
+    user = django_user_model.objects.create_user(username="dana", password="x")
+    workspace = user.memberships.get().workspace
+    responses.add(
+        responses.POST,
+        "https://nowhere.example/api/v1/apps",
+        body=requests.ConnectionError("unreachable"),
+    )
+
+    response = _client_for(user).post(
+        "/oauth/start/",
+        {
+            "connector_slug": "mastodon",
+            "workspace": workspace.pk,
+            "redirect_uri": "https://app.example.com/callback",
+            "extra": {"instance_domain": "nowhere.example"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 502
+    assert "reach the platform" in response.data["detail"]
