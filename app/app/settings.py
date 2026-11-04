@@ -355,6 +355,8 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 ACCOUNT_EMAIL_VERIFICATION = os.environ.get("ACCOUNT_EMAIL_VERIFICATION", "optional")
 ACCOUNT_SIGNUP_FIELDS = ["email*", "username*", "password1*", "password2*"]
 ACCOUNT_CONFIRM_EMAIL_ON_GET = False
+# Without this, subjects read "[example.com] ..." (the default Site's name).
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "[OmniPost] "
 ACCOUNT_ADAPTER = "omnipost_api.auth_adapter.FrontendAccountAdapter"
 
 # Days a sign-in token stays valid. 0 disables expiry.

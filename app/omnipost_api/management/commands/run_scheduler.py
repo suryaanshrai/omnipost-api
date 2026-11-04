@@ -65,7 +65,8 @@ class Command(BaseCommand):
                     continue
                 try:
                     result = task.run()
-                    if result:
+                    # Only log runs that did something.
+                    if result and (not isinstance(result, dict) or any(result.values())):
                         self.stdout.write(f"{task.name}: {result}")
                 except Exception:  # noqa: BLE001 - one failing task must not stop the rest
                     logger.exception("Scheduled task %s failed", task.name)
