@@ -2,8 +2,7 @@ import pytest
 import responses
 
 from connectors.base import ChannelCredentials, PublishContext, PublishState
-from connectors.declarative import SpecError, validate_spec
-from connectors.errors import AuthExpired, PermanentError, RateLimited
+from connectors.errors import AuthExpired, PermanentError, RateLimited, TransientError
 from connectors.registry import get
 
 
@@ -39,8 +38,8 @@ def test_mastodon_publish_success():
 
 @responses.activate
 def test_mastodon_adversarial_caption_reaches_upstream_unmodified():
-    # A caption containing the literal variable names must not corrupt the
-    # request. This is the exact failure mode replace_keys() had.
+    # A caption containing credential-like words and quotes must reach the
+    # platform unchanged (the old replace_keys() templating corrupted it).
     tricky = 'My post about TEXT, ACCESS_TOKEN, and "quotes"'
     responses.add(
         responses.POST,
@@ -99,7 +98,7 @@ def test_telegram_nested_response_mapping():
     connector = get("telegram")
     outcome = connector.publish(_ctx("hi", BOT_TOKEN="12345:abc", CHAT_ID="-100999"), PublishState())
     assert outcome.done is True
-    assert outcome.remote_id == 999
+    assert outcome.remote_id == "999"
 
 
 @responses.activate
@@ -111,50 +110,39 @@ def test_discord_webhook_publish():
         status=200,
     )
     connector = get("discord")
-    outcome = connector.publish(
-        _ctx("hi", WEBHOOK_URL="https://discord.com/api/webhooks/1/token"), PublishState()
-    )
+    outcome = connector.publish(_ctx("hi", WEBHOOK_URL="https://discord.com/api/webhooks/1/token"), PublishState())
     assert outcome.done is True
     assert outcome.remote_id == "555"
     assert responses.calls[0].request.params["wait"] == "true"
 
 
-def test_spec_missing_request_envelope_is_rejected_at_load_time():
-    # This is exactly the bug the old linkedin.json shipped with: a step
-    # whose "request" was the raw platform payload with no
-    # method/base_url/endpoint wrapper, which raised KeyError only when a
-    # user actually tried to publish. Now it fails validate_spec() instead.
-    bad_spec = {
-        "slug": "broken",
-        "display_name": "Broken",
-        "instance": ["ACCESS_TOKEN"],
-        "actions": {"publish_text": {"steps": [{"request": {"payload": {"text": "{{ TEXT }}"}}}]}},
-    }
-    with pytest.raises(SpecError, match="missing"):
-        validate_spec(bad_spec)
+@responses.activate
+def test_server_errors_retry_instead_of_failing_permanently():
+    responses.add(responses.POST, "https://api.telegram.org/bot1:a/sendMessage", json={}, status=503)
+    with pytest.raises(TransientError):
+        get("telegram").publish(_ctx("hi", BOT_TOKEN="1:a", CHAT_ID="x"), PublishState())
 
 
-def test_spec_referencing_undefined_variable_is_rejected_at_load_time():
-    bad_spec = {
-        "slug": "broken",
-        "display_name": "Broken",
-        "instance": ["ACCESS_TOKEN"],
-        "actions": {
-            "publish_text": {
-                "steps": [
-                    {
-                        "request": {
-                            "method": "POST",
-                            "base_url": "https://x",
-                            "endpoint": "/y",
-                            "payload": {"link": "{{ REEL_URL }}"},
-                        }
-                    }
-                ]
-            }
-        },
+@responses.activate
+def test_deleted_discord_webhook_needs_reconnecting():
+    responses.add(responses.POST, "https://discord.com/api/webhooks/1/gone", json={}, status=404)
+    with pytest.raises(AuthExpired):
+        get("discord").publish(_ctx("hi", WEBHOOK_URL="https://discord.com/api/webhooks/1/gone"), PublishState())
+
+
+def test_every_platform_is_registered():
+    from connectors.registry import all_slugs
+
+    assert set(all_slugs()) == {
+        "bluesky",
+        "discord",
+        "facebook",
+        "instagram",
+        "linkedin",
+        "mastodon",
+        "telegram",
+        "threads",
+        "tiktok",
+        "x",
+        "youtube",
     }
-    # This is exactly the old facebook.json bug: REEL_URL referenced but
-    # never produced by any step or credential.
-    with pytest.raises(SpecError, match="undefined variable"):
-        validate_spec(bad_spec)

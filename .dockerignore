@@ -1,1 +1,5 @@
 cloned_app/
+app/*.png
+**/__pycache__/
+**/tests/
+.git/

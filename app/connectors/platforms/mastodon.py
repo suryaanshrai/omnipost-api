@@ -1,8 +1,4 @@
-"""Mastodon OAuth. Publishing itself is still handled by the declarative
-spec (specs/mastodon.yaml) — this class only adds the OAuth methods
-DeclarativeConnector doesn't implement, then registers itself under the same
-slug so the registry's "hand-written always wins" rule picks this up instead
-of a bare DeclarativeConnector.
+"""Mastodon: single statuses, threads (reply chains), OAuth and metrics.
 
 Mastodon has no fixed OAuth app: every instance (mastodon.social,
 fosstodon.org, a private one) is a separate server that issues its own
@@ -16,45 +12,55 @@ carry it in the OAuth `state` parameter instead.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import requests
-import yaml
 from django.core import signing
 
-from ..base import ChannelCredentials, OAuthAuthorization, PublishContext, PublishOutcome, PublishState
-from ..declarative import DeclarativeConnector
-from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
+from ..base import (
+    ChannelCredentials,
+    Connector,
+    ContentPart,
+    OAuthAuthorization,
+    PublishContext,
+    PublishOutcome,
+    PublishState,
+)
+from ..capabilities import Capabilities
+from ..errors import AuthExpired, PermanentError, TransientError
+from ..http import raise_for_platform
 from ..netguard import UnsafeURL, assert_public_domain
 
-_SPEC_PATH = Path(__file__).parent.parent / "specs" / "mastodon.yaml"
 _SIGNING_SALT = "connectors.mastodon.oauth"
 _SIGNING_MAX_AGE_S = 600  # the whole authorize -> callback round trip must complete in 10 minutes
 _SCOPES = "read:accounts write:statuses write:media"
 
 
-class MastodonConnector(DeclarativeConnector):
+class MastodonConnector(Connector):
+    slug = "mastodon"
+    # Pasted credentials (an access token from the instance's Development
+    # settings) or OAuth, which fills in the same two fields.
+    credential_fields = ("ACCESS_TOKEN", "INSTANCE_DOMAIN")
     oauth_extra_fields = ("instance_domain",)
-
-    def __init__(self) -> None:
-        with open(_SPEC_PATH, encoding="utf-8") as f:
-            spec = yaml.safe_load(f)
-        super().__init__(spec=spec)
+    capabilities = Capabilities(
+        slug="mastodon",
+        display_name="Mastodon",
+        max_text_length=500,
+        supports_alt_text=True,
+        supports_threads=True,
+        post_kinds=("text",),
+    )
 
     def publish(self, ctx: PublishContext, state: PublishState) -> PublishOutcome:
-        if not ctx.parts:
-            return super().publish(ctx, state)
-        return self._publish_thread(ctx, state)
+        # A single post is a thread of one.
+        return self._publish_thread(ctx, ctx.parts or [ContentPart(text=ctx.text)], state)
 
-    def _publish_thread(self, ctx: PublishContext, state: PublishState) -> PublishOutcome:
+    def _publish_thread(self, ctx: PublishContext, parts: list[ContentPart], state: PublishState) -> PublishOutcome:
         """Posts ctx.parts as a reply chain (a Mastodon "thread"), pausing
         between parts for each part's delay_after_s via retry_after_s rather
         than blocking a worker — the same yield-and-re-enqueue pattern every
         other multi-step connector uses (see jobs/publisher.py)."""
-        assert ctx.parts is not None
-        parts = ctx.parts
         index = state.data.get("part_index", 0)
         remote_ids: list[str] = list(state.data.get("remote_ids", []))
         in_reply_to = remote_ids[-1] if remote_ids else None
@@ -70,8 +76,7 @@ class MastodonConnector(DeclarativeConnector):
             json=payload,
             timeout=30,
         )
-        if not response.ok:
-            self._raise_thread_error(response)
+        raise_for_platform(response, "Mastodon", auth_statuses=(401,))
 
         body = response.json()
         remote_ids.append(str(body["id"]))
@@ -84,21 +89,6 @@ class MastodonConnector(DeclarativeConnector):
             done=False,
             state=PublishState(step="thread_part", data={"part_index": next_index, "remote_ids": remote_ids}),
             retry_after_s=max(part.delay_after_s, 1),
-        )
-
-    def _raise_thread_error(self, response) -> None:
-        if response.status_code == 429:
-            header = response.headers.get("Retry-After")
-            retry_after = float(header) if header and header.isdigit() else 30.0
-            raise RateLimited(
-                "Mastodon rate-limited this thread.", raw_detail=response.text[:500], retry_after=retry_after
-            )
-        if response.status_code == 401:
-            raise AuthExpired("Mastodon rejected this channel's credentials.", raw_detail=response.text[:500])
-        if response.status_code == 422:
-            raise PermanentError("Mastodon rejected one part of this thread.", raw_detail=response.text[:500])
-        raise TransientError(
-            f"Mastodon returned {response.status_code} while posting a thread part.", raw_detail=response.text[:500]
         )
 
     def _register_app(self, instance_domain: str, redirect_uri: str) -> dict:

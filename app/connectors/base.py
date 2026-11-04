@@ -123,6 +123,10 @@ class OAuthAuthorization:
 
 
 class Connector(ABC):
+    """One platform integration: declare `capabilities`, implement
+    `validate()` (inherited default covers most rules) and `publish()`, and
+    optionally OAuth, `refresh()` and `fetch_metrics()`."""
+
     # True only for connectors whose refresh() really gets a new token.
     # Drives jobs.health's "refresh once after a 401" path.
     refreshes_tokens: bool = False
@@ -139,9 +143,6 @@ class Connector(ABC):
     @property
     def supports_metrics(self) -> bool:
         return type(self).fetch_metrics is not Connector.fetch_metrics
-    """One platform integration. Subclass this directly for platforms with
-    real state machines (media processing, chunked upload); use
-    DeclarativeConnector for simple single-request REST platforms."""
 
     slug: str
     capabilities: Capabilities
