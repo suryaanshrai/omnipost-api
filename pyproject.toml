@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "omnipost-api"
 version = "0.1.0"
-description = "Rest API for the Omnipost application"
+description = "REST API and job engine for OmniPost"
 authors = ["Suryaansh Rai <suryaanshrai@gmail.com>"]
 readme = "README.md"
 package-mode = false
