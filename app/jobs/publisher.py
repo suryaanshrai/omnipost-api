@@ -25,8 +25,9 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+import requests
 from connectors.base import PublishState
-from connectors.errors import ConnectorError
+from connectors.errors import ConnectorError, TransientError
 from connectors.registry import get as get_connector
 from django.db import transaction
 from django.utils import timezone
@@ -68,6 +69,11 @@ def run_publish_attempt(attempt_id: int) -> None:
             _record(_retry_after_refresh, attempt, post_target)
             return
         _record(_handle_error, attempt, post_target, exc)
+        return
+    except requests.RequestException as exc:
+        # The platform didn't answer: an ordinary transient failure, not a bug.
+        logger.warning("Platform unreachable for attempt %s: %s", attempt_id, exc)
+        _record(_handle_error, attempt, post_target, TransientError("Couldn't reach the platform. Will retry."))
         return
     except Exception as exc:  # noqa: BLE001 - genuinely unknown failure, treat as transient
         logger.exception("Unhandled exception in connector.publish for attempt %s", attempt_id)

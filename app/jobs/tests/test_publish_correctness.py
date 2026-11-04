@@ -254,3 +254,14 @@ def test_a_401_refreshes_the_token_once_and_retries(workspace, enqueued):
     channel.refresh_from_db()
     assert channel.health == Channel.HEALTH_BROKEN
     assert publisher.MAX_RETRIES > 2
+
+
+@responses.activate
+def test_unreachable_platform_is_a_transient_failure_with_a_clear_message(post_target, enqueued):
+    responses.add(responses.POST, _STATUSES, body=requests.ConnectionError("no route"))
+    attempt = schedule_post_target(post_target)
+    run_publish_attempt(attempt.pk)
+    attempt.refresh_from_db()
+    assert attempt.error_class == "TRANSIENT"
+    assert attempt.error_detail == "Couldn't reach the platform. Will retry."
+    assert PublishAttempt.objects.filter(post_target=post_target, attempt_number=2).exists()
