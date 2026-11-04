@@ -1,6 +1,6 @@
 """Evergreen/recurring post recycling: rotates through a rule's text variants,
 creating and scheduling a new Post+PostTarget each time next_run_at comes due.
-Runs continuously via the `recur_loop` management command, mirroring
+Runs continuously via the `run_scheduler` management command, mirroring
 jobs/reconciler.py's Postgres-is-truth pattern — RecurrenceRule.next_run_at is
 what's durable; nothing about "when is the next occurrence" lives in Redis.
 """

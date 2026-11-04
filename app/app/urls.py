@@ -15,9 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from omnipost_api import metrics_exporter
 
@@ -27,17 +27,25 @@ urlpatterns = [
     path('healthz', health.healthz, name='healthz'),
     path('readyz', health.readyz, name='readyz'),
     path('metrics', metrics_exporter.metrics_view, name='prometheus-metrics'),
-    path('admin/', admin.site.urls),
-    path('django-rq/', include('django_rq.urls')),
     path('', include('omnipost_api.urls')),
-    path('api-auth/', include('rest_framework.urls')),
-    path('schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 
-# Local-storage media (MediaAsset.file without S3) — served by Django only
-# under DEBUG so a dev frontend can actually render uploaded images; in
-# production a reverse proxy or S3 serves them. static() is a no-op when
-# DEBUG is off.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+if settings.ENABLE_ADMIN:
+    urlpatterns += [
+        path('admin/', admin.site.urls),
+        path('django-rq/', include('django_rq.urls')),
+        path('api-auth/', include('rest_framework.urls')),
+    ]
+
+if settings.ENABLE_API_DOCS:
+    urlpatterns += [
+        path('schema/', SpectacularAPIView.as_view(), name='schema'),
+        path('swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+        path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    ]
+
+# Uploaded media when there's no S3 bucket: platforms fetch it from
+# PUBLIC_BASE_URL/media/..., so it has to be served in production too.
+if settings.SERVE_MEDIA:
+    _prefix = settings.MEDIA_URL.lstrip('/')
+    urlpatterns += [re_path(rf'^{_prefix}(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT})]

@@ -1,37 +1,51 @@
 #!/bin/sh
 set -eu
 
-# ROLE selects which process this container runs. Each role is its own
-# process (no `&` backgrounding) so one crashing doesn't take another down —
-# the old CMD backgrounded the worker with a bare `&` under the runserver's
-# PID 1, so a dead worker went unnoticed.
+# OMNIPOST_ROLE selects which process this container runs. Each role is its
+# own process so one crashing doesn't take another down.
 ROLE="${OMNIPOST_ROLE:-web}"
 
 case "$ROLE" in
   web)
-    python manage.py migrate --noinput
-    python manage.py collectstatic --noinput --clear
+    # docker-compose runs migrations once in a `migrate` service and sets
+    # MIGRATE_ON_START=false; a single-container deploy migrates here.
+    if [ "${MIGRATE_ON_START:-true}" = "true" ]; then
+      python manage.py migrate --noinput
+    fi
     exec gunicorn app.wsgi:application \
       --bind "0.0.0.0:${PORT:-8000}" \
       --workers "${GUNICORN_WORKERS:-3}" \
-      --timeout "${GUNICORN_TIMEOUT:-60}" \
+      --timeout "${GUNICORN_TIMEOUT:-150}" \
       --access-logfile - \
       --error-logfile -
     ;;
   worker)
-    exec python manage.py rqworker --with-scheduler default publish publish_low media metrics maintenance ai
+    # Every queue in one process (simplest; what older compose files use).
+    exec python manage.py rqworker --with-scheduler publish maintenance default media metrics ai
     ;;
+  worker-publish)
+    # Time-sensitive work only, so a video transcode never delays a publish.
+    # Pair with worker-media.
+    exec python manage.py rqworker --with-scheduler publish maintenance default
+    ;;
+  worker-media)
+    exec python manage.py rqworker media metrics ai
+    ;;
+  scheduler)
+    exec python manage.py run_scheduler
+    ;;
+  # Older compose files ran each periodic task in its own container.
   reconciler)
-    exec python manage.py reconcile_loop
+    exec python manage.py run_scheduler --only reconcile
     ;;
   recurrence)
-    exec python manage.py recur_loop
+    exec python manage.py run_scheduler --only recurrence
     ;;
   token-refresher)
-    exec python manage.py refresh_channel_tokens
+    exec python manage.py run_scheduler --only token-refresh
     ;;
   metrics-poller)
-    exec python manage.py metrics_poll_loop
+    exec python manage.py run_scheduler --only metrics
     ;;
   migrate)
     exec python manage.py migrate --noinput

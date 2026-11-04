@@ -75,6 +75,11 @@ if DEBUG and "OPENAI_API_KEY" not in os.environ:
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1" if DEBUG else "")
 if not DEBUG and not ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG is off.")
+# The container healthcheck calls http://localhost:8000/healthz from inside
+# the container; without these it gets a 400 DisallowedHost in production.
+for _local in ("localhost", "127.0.0.1"):
+    if _local not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_local)
 
 # Never allow all origins: the API accepts session cookies for the browsable API.
 CORS_ALLOWED_ORIGINS = env_list(
@@ -231,13 +236,13 @@ _REDIS_CONN: dict[str, str | int | None] = {
     "PASSWORD": _REDIS_PASSWORD or None,
     "DEFAULT_TIMEOUT": 360,
 }
-# Separate queues so a burst of retries/backfill (publish_low) or a slow media
-# transcode can't starve time-sensitive scheduled publishes (publish_high).
-# All share one Redis connection — only the queue name differs.
+# Separate queues so a slow media transcode or metrics poll can't hold up a
+# scheduled publish: run `worker` (publish, maintenance, default) and
+# `worker-media` (media, metrics, ai) as separate processes (see
+# docker/entrypoint.sh). All share one Redis connection.
 RQ_QUEUES = {
     "default": _REDIS_CONN,
     "publish": _REDIS_CONN,
-    "publish_low": _REDIS_CONN,
     "media": _REDIS_CONN,
     "metrics": _REDIS_CONN,
     "maintenance": _REDIS_CONN,
@@ -255,6 +260,15 @@ RQ_QUEUES = {
 # presigned upload (see MediaAssetViewSet.presign in views.py).
 AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME", "")
 S3_MEDIA_ENABLED = bool(AWS_STORAGE_BUCKET_NAME) and not TESTING
+# Without S3, the API serves uploaded media itself so platforms can fetch it
+# from PUBLIC_BASE_URL/media/... (fine at self-host scale; put a CDN or S3 in
+# front for more).
+SERVE_MEDIA = env_bool("SERVE_MEDIA", not S3_MEDIA_ENABLED)
+
+# /admin and the RQ dashboard need a staff login either way; these switch
+# them (and the API docs) off entirely.
+ENABLE_ADMIN = env_bool("ENABLE_ADMIN", True)
+ENABLE_API_DOCS = env_bool("ENABLE_API_DOCS", True)
 
 if S3_MEDIA_ENABLED:
     AWS_S3_REGION_NAME = os.environ.get("AWS_S3_REGION_NAME", "us-east-1")
@@ -384,6 +398,8 @@ USE_TZ = True
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
+    # Healthchecks are plain HTTP from inside the container.
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$", r"^readyz$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "31536000"))
