@@ -11,6 +11,7 @@ from dj_rest_auth.registration.views import RegisterView
 from dj_rest_auth.serializers import PasswordResetSerializer, TokenSerializer
 from dj_rest_auth.views import LoginView, LogoutView, PasswordChangeView, PasswordResetConfirmView, PasswordResetView
 from django.conf import settings
+from django.contrib.auth import logout as django_logout
 from django.utils import timezone
 from drf_spectacular.contrib.rest_auth import RestAuthDetailSerializer as _Detail
 from drf_spectacular.utils import extend_schema
@@ -82,7 +83,11 @@ class ThrottledRegisterView(RegisterView):
     throttle_scope = "auth"
 
     def create(self, request, *args, **kwargs):
-        return _move_key_to_cookie(request, super().create(request, *args, **kwargs))
+        response = super().create(request, *args, **kwargs)
+        # allauth signs the new user into a Django session as well; sign-in
+        # here is the token (header or cookie) only.
+        django_logout(request._request)
+        return _move_key_to_cookie(request, response)
 
 
 @extend_schema(request=PasswordResetSerializer, responses=_Detail)
@@ -107,6 +112,7 @@ class CookieLogoutView(LogoutView):
         if is_personal_token(request):
             raise PermissionDenied("This is an API token. Revoke it in Settings instead.")
         response = super().logout(request)
+        django_logout(request._request)  # any Django session too (e.g. from signup)
         response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/", domain=settings.AUTH_COOKIE_DOMAIN)
         return response
 

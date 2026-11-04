@@ -129,3 +129,15 @@ def test_cors_allows_the_client_header():
     from django.conf import settings
 
     assert "x-omnipost-client" in settings.CORS_ALLOW_HEADERS
+
+
+def test_signup_leaves_no_django_session_behind(db, settings):
+    settings.ACCOUNT_EMAIL_VERIFICATION = "none"
+    client = APIClient()
+    body = {"username": "new", "email": "new@example.com", "password1": "Strong-pw-9876", "password2": "Strong-pw-9876"}
+    response = client.post("/auth/registration/", body, HTTP_X_OMNIPOST_CLIENT="web")
+    assert response.status_code == 201 and response.cookies["omnipost_auth"].value
+    assert "_auth_user_id" not in client.session
+    # Signed out, an anonymous POST isn't held to session CSRF rules.
+    client.post("/auth/logout/", HTTP_X_OMNIPOST_CLIENT="web")
+    assert client.post("/auth/password/reset/", {"email": "new@example.com"}).status_code == 200
