@@ -1905,6 +1905,15 @@ paths:
         schema:
           type: integer
       - in: query
+        name: scheduled
+        schema:
+          type: string
+          enum:
+          - due
+          - upcoming
+        description: Keep only scheduled posts whose time has come (`due`) or not
+          yet (`upcoming`); posts in other statuses are unaffected.
+      - in: query
         name: status
         schema:
           type: string

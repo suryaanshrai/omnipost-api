@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -447,11 +447,18 @@ class PublishAttemptViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 @_workspace_list(
-    OpenApiParameter("status", str, required=False, description="Comma-separated statuses, e.g. `draft,failed`.")
+    OpenApiParameter("status", str, required=False, description="Comma-separated statuses, e.g. `draft,failed`."),
+    OpenApiParameter(
+        "scheduled", str, required=False, enum=["due", "upcoming"],
+        description="Keep only scheduled posts whose time has come (`due`) or not yet (`upcoming`); "
+        "posts in other statuses are unaffected.",
+    ),
 )
 class PostViewSet(WorkspaceScopedViewSet):
     serializer_class = PostSerializer
-    queryset = Post.objects.prefetch_related("targets__channel")
+    queryset = Post.objects.prefetch_related(
+        "targets__channel", "targets__media", "targets__parts__media", "base_media"
+    )
     # Contributors draft and submit; publishing decisions need an editor.
     write_role = Membership.ROLE_CONTRIBUTOR
     action_roles = {
@@ -484,6 +491,15 @@ class PostViewSet(WorkspaceScopedViewSet):
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
             if statuses:
                 qs = qs.filter(status__in=statuses)
+        scheduled = self.request.query_params.get("scheduled")
+        if scheduled in ("due", "upcoming"):
+            from django.db.models import Q
+
+            now = timezone.now()
+            not_yet = Q(status=Post.STATUS_SCHEDULED, scheduled_for__gt=now)
+            qs = qs.exclude(not_yet) if scheduled == "due" else qs.exclude(
+                Q(status=Post.STATUS_SCHEDULED) & ~Q(scheduled_for__gt=now)
+            )
         return qs
 
     def perform_create(self, serializer):
@@ -659,6 +675,8 @@ class PostViewSet(WorkspaceScopedViewSet):
 
         start = _parse_iso(start_raw)
         end = _parse_iso(end_raw)
+        if end <= start or end - start > timedelta(days=_MAX_CALENDAR_DAYS):
+            raise ValidationError(f"end must be after start, and at most {_MAX_CALENDAR_DAYS} days later.")
         targets = (
             PostTarget.objects.filter(post__workspace_id=workspace_id, run_at__gte=start, run_at__lt=end)
             .exclude(status=PostTarget.STATUS_CANCELED)
@@ -1018,6 +1036,7 @@ class ValidateView(APIView):
 
 
 _ALLOWED_MEDIA_PREFIXES = ("image/", "video/")
+_MAX_CALENDAR_DAYS = 62
 
 
 def _presign_prefix(workspace_id: int) -> str:
@@ -1032,7 +1051,10 @@ def _platform_unreachable() -> Response:
 
 
 def _parse_iso(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        raise ValidationError(f"{value!r} isn't a date and time (use ISO 8601).") from None
     if timezone.is_naive(parsed):
         # The old CreatePostView had exactly this gap: a schedule string with
         # no UTC offset produced a naive datetime, and comparing it against

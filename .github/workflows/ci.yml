@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+# Read-only by default; the image job gets nothing more (it pushes to
+# Docker Hub with its own secret, not GitHub).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: omni-db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U root -d omni-db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_DEBUG: "true"
+      DJANGO_SECRET_KEY: ci-only-secret-key
+      OMNIPOST_KEK: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: omni-db
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_HOST: localhost
+      REDIS_PASSWORD: ""
+      # mypy's django-stubs plugin needs `app.settings` importable.
+      PYTHONPATH: app
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # pygraphviz (dev: model graphs) needs graphviz headers; ffmpeg is for
+      # jobs/media.py's probe/transcode tests, as in the Dockerfile.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgraphviz-dev pkg-config ffmpeg
+
+      - name: Install poetry
+        run: pip install poetry==1.8.5 poetry-plugin-export==1.8.0
+
+      - name: Install dependencies
+        run: poetry install --no-root --with dev
+
+      - name: ruff
+        run: poetry run ruff check .
+
+      - name: mypy
+        run: poetry run mypy app
+
+      - name: pytest (real Postgres + Redis)
+        run: poetry run pytest --cov=app --cov-report=term-missing:skip-covered --cov-report=xml
+
+      - name: makemigrations --check
+        run: poetry run python manage.py makemigrations --check --dry-run
+        working-directory: app
+
+      # The UI's generated types come from schema.yml; a change to the API
+      # that isn't reflected there breaks the UI silently.
+      - name: schema.yml is up to date
+        run: |
+          poetry run python manage.py spectacular --file ../schema.yml
+          git diff --exit-code -- ../schema.yml || (echo "::error::schema.yml is stale. Run: cd app && python manage.py spectacular --file ../schema.yml" && exit 1)
+        working-directory: app
+
+      - name: Dependency audit (runtime deps)
+        run: |
+          poetry export --only main --format requirements.txt --output /tmp/requirements.txt
+          pipx run pip-audit==2.9.0 --strict -r /tmp/requirements.txt
+
+  image:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build and push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # :latest for existing compose setups; :<sha> is the rollback target
+          # (IMAGE_TAG in the omnipost compose file).
+          tags: |
+            suryaanshrai515/omnipost-api:latest
+            suryaanshrai515/omnipost-api:${{ github.sha }}

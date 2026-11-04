@@ -73,6 +73,20 @@ def _foreign_workspace_refs(value, workspace_id: int) -> bool:
     return False
 
 
+def validate_timezone_name(value: str) -> str:
+    """An IANA zone name, or blank. Bad names used to be stored and then
+    crash best-times and queue-slot scheduling later."""
+    if not value:
+        return value
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise serializers.ValidationError(f"{value!r} isn't a time zone name like Europe/London.") from None
+    return value
+
+
 class WorkspaceScopedSerializer(serializers.ModelSerializer):
     """Base for every serializer whose rows belong to a workspace:
     * related-object ids are limited to the request user's workspaces;
@@ -145,6 +159,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         fields = ["id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "created_at"]
         read_only_fields = ["id", "created_at"]
 
+    def validate_timezone(self, value):
+        return validate_timezone_name(value)
+
 
 class MembershipSerializer(WorkspaceScopedSerializer):
     user = UserSerializer(read_only=True)
@@ -204,6 +221,9 @@ class ChannelSerializer(WorkspaceScopedSerializer):
             "credentials",
         ]
         read_only_fields = ["id", "health", "health_detail", "created_at"]
+
+    def validate_timezone(self, value):
+        return validate_timezone_name(value)
 
     def validate_connector_slug(self, value):
         from connectors import registry
@@ -633,6 +653,11 @@ class QueueSlotSerializer(WorkspaceScopedSerializer):
         model = QueueSlot
         fields = ["id", "channel", "weekday", "time_of_day", "is_active"]
         read_only_fields = ["id"]
+
+    def validate_weekday(self, value):
+        if not 0 <= value <= 6:
+            raise serializers.ValidationError("weekday is 0 (Monday) to 6 (Sunday).")
+        return value
 
 
 class BlackoutWindowSerializer(WorkspaceScopedSerializer):
