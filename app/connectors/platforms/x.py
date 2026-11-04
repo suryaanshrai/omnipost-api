@@ -39,6 +39,7 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -140,6 +141,7 @@ class XConnector(Connector):
                 "REFRESH_TOKEN": token_data.get("refresh_token", ""),
                 "CLIENT_ID": client_id,
                 "CLIENT_SECRET": client_secret,
+                **expiry_values(token_data),
             },
             external_account_id=user_id,
         )
@@ -162,6 +164,7 @@ class XConnector(Connector):
                 **credentials.values,
                 "ACCESS_TOKEN": token_data["access_token"],
                 "REFRESH_TOKEN": token_data.get("refresh_token", refresh_token),
+                **expiry_values(token_data),
             },
             external_account_id=credentials.external_account_id,
         )

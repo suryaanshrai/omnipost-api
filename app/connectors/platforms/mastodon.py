@@ -27,6 +27,7 @@ from django.core import signing
 from ..base import ChannelCredentials, OAuthAuthorization, PublishContext, PublishOutcome, PublishState
 from ..declarative import DeclarativeConnector
 from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
+from ..netguard import UnsafeURL, assert_public_domain
 
 _SPEC_PATH = Path(__file__).parent.parent / "specs" / "mastodon.yaml"
 _SIGNING_SALT = "connectors.mastodon.oauth"
@@ -118,9 +119,13 @@ class MastodonConnector(DeclarativeConnector):
         return response.json()
 
     def authorize_url(self, redirect_uri: str, state: str, **extra: str) -> OAuthAuthorization:
-        instance_domain = extra.get("instance_domain")
+        instance_domain = (extra.get("instance_domain") or "").strip().lower()
         if not instance_domain:
             raise PermanentError("Mastodon requires 'instance_domain' to start OAuth.")
+        try:
+            assert_public_domain(instance_domain)
+        except UnsafeURL as exc:
+            raise PermanentError(str(exc)) from exc
 
         app = self._register_app(instance_domain, redirect_uri)
 

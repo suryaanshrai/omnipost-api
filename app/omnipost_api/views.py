@@ -17,7 +17,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -36,7 +36,13 @@ from .models import (
     VoiceProfile,
     Workspace,
 )
-from .permissions import user_can_access_workspace, workspaces_for_user
+from .permissions import (
+    has_role,
+    require_role,
+    role_in,
+    workspace_id_of,
+    workspaces_for_user,
+)
 from .serializers import (
     AppCredentialSerializer,
     BestTimeSerializer,
@@ -82,13 +88,23 @@ def _workspace_list(*extra: OpenApiParameter):
 
 
 class WorkspaceScopedViewSet(viewsets.ModelViewSet):
-    """Base for any viewset whose model has a direct `workspace` FK: scopes
-    the queryset to workspaces the requesting user is a member of. The old
-    API had no such scoping at all — any authenticated user could read or
-    write any other user's rows by id."""
+    """Base for any viewset whose rows belong to a workspace: scopes the
+    queryset to workspaces the requesting user is a member of, and requires
+    `write_role` (or the action's entry in `action_roles`) in the row's
+    workspace for every write — create, update, delete and POST actions."""
 
     permission_classes = [IsAuthenticated]
     workspace_field = "workspace_id"
+    write_role = Membership.ROLE_EDITOR
+    action_roles: dict[str, str] = {}
+
+    def required_role(self) -> str:
+        return self.action_roles.get(self.action, self.write_role)
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.method not in SAFE_METHODS:
+            require_role(request.user, workspace_id_of(obj), self.required_role())
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -101,10 +117,17 @@ class WorkspaceScopedViewSet(viewsets.ModelViewSet):
             qs = qs.filter(**{self.workspace_field: workspace_id})
         return qs
 
+    def _create_workspace_id(self, data) -> int:
+        if data.get("workspace") is not None:
+            return data["workspace"].pk
+        for key in ("channel", "post"):
+            owner = workspace_id_of(data[key]) if data.get(key) is not None else None
+            if owner is not None:
+                return owner
+        raise ValidationError({"workspace": "This field is required."})
+
     def perform_create(self, serializer):
-        workspace = serializer.validated_data.get("workspace")
-        if workspace and workspace.pk not in workspaces_for_user(self.request.user):
-            raise PermissionDenied("You are not a member of this workspace.")
+        require_role(self.request.user, self._create_workspace_id(serializer.validated_data), self.required_role())
         serializer.save()
 
 
@@ -116,14 +139,17 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Workspace.objects.filter(id__in=workspaces_for_user(self.request.user))
 
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.method not in SAFE_METHODS:
+            min_role = Membership.ROLE_OWNER if self.action == "destroy" else Membership.ROLE_ADMIN
+            require_role(request.user, obj.pk, min_role)
+
     def perform_create(self, serializer):
         from .models import Organization
         from .services.provisioning import unique_workspace_slug
 
-        organization = serializer.validated_data.get("organization")
-        if organization is None:
-            organization = Organization.objects.create(name=serializer.validated_data["name"])
-            serializer.validated_data["organization"] = organization
+        serializer.validated_data["organization"] = Organization.objects.create(name=serializer.validated_data["name"])
         if not serializer.validated_data.get("slug"):
             serializer.validated_data["slug"] = unique_workspace_slug(serializer.validated_data["name"])
         workspace = serializer.save()
@@ -132,14 +158,61 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
 
 @_workspace_list()
 class MembershipViewSet(WorkspaceScopedViewSet):
+    """Admins add existing accounts by username or email, change roles and
+    remove members. Nobody can grant a role above their own, and a workspace
+    always keeps at least one owner."""
+
     serializer_class = MembershipSerializer
     queryset = Membership.objects.select_related("user")
+    write_role = Membership.ROLE_ADMIN
+
+    def _check_grant(self, workspace_id: int, role: str | None) -> None:
+        from .permissions import ROLE_RANK
+
+        if role is None:
+            return
+        mine = role_in(self.request.user, workspace_id)
+        if not self.request.user.is_superuser and (mine is None or ROLE_RANK[role] > ROLE_RANK[mine]):
+            raise PermissionDenied("You can't grant a role above your own.")
+
+    def _check_keeps_an_owner(self, membership: Membership, new_role: str | None) -> None:
+        if membership.role != Membership.ROLE_OWNER or new_role == Membership.ROLE_OWNER:
+            return
+        others = Membership.objects.filter(workspace_id=membership.workspace_id, role=Membership.ROLE_OWNER).exclude(
+            pk=membership.pk
+        )
+        if not others.exists():
+            raise ValidationError("A workspace needs at least one owner.")
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        require_role(self.request.user, data["workspace"].pk, self.write_role)
+        self._check_grant(data["workspace"].pk, data.get("role", Membership.ROLE_EDITOR))
+        serializer.save()
+
+    def perform_update(self, serializer):
+        new_role = serializer.validated_data.get("role")
+        self._check_grant(serializer.instance.workspace_id, new_role)
+        self._check_keeps_an_owner(serializer.instance, new_role)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._check_keeps_an_owner(instance, None)
+        instance.delete()
+
+    def check_object_permissions(self, request, obj):
+        # Anyone may leave a workspace (delete their own membership); every
+        # other write needs admin.
+        if self.action == "destroy" and obj.user_id == request.user.pk:
+            return
+        super().check_object_permissions(request, obj)
 
 
 @_workspace_list()
 class ChannelViewSet(WorkspaceScopedViewSet):
     serializer_class = ChannelSerializer
     queryset = Channel.objects.all()
+    write_role = Membership.ROLE_ADMIN
 
     def perform_create(self, serializer):
         super().perform_create(serializer)
@@ -182,6 +255,7 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
 
     serializer_class = MediaAssetSerializer
     queryset = MediaAsset.objects.all()
+    write_role = Membership.ROLE_CONTRIBUTOR
 
     def create(self, request, *args, **kwargs):
         if "file" not in request.FILES and request.data.get("key"):
@@ -191,9 +265,11 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        workspace = serializer.validated_data.get("workspace")
-        if workspace and workspace.pk not in workspaces_for_user(self.request.user):
-            raise PermissionDenied("You are not a member of this workspace.")
+        require_role(self.request.user, serializer.validated_data["workspace"].pk, self.write_role)
+        upload = serializer.validated_data.get("file")
+        content_type = getattr(upload, "content_type", "") or ""
+        if content_type and not content_type.startswith(_ALLOWED_MEDIA_PREFIXES):
+            raise ValidationError({"file": "Only image and video files can be uploaded."})
         serializer.save(uploaded_by=self.request.user)
         from jobs.queue import enqueue_probe
 
@@ -203,8 +279,13 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         payload = MediaConfirmRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         workspace = payload.validated_data["workspace"]
-        if workspace.pk not in workspaces_for_user(request.user):
-            raise PermissionDenied("You are not a member of this workspace.")
+        require_role(request.user, workspace.pk, self.write_role)
+        key = payload.validated_data["key"]
+        if not key.startswith(_presign_prefix(workspace.pk)) or ".." in key:
+            # Only keys minted by presign() for this workspace: otherwise any
+            # object in the bucket (another workspace's upload) could be
+            # claimed by guessing its key.
+            raise ValidationError({"key": "Unknown upload key for this workspace."})
 
         asset = MediaAsset(
             workspace=workspace,
@@ -215,7 +296,7 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         # The object already exists in storage at this key (uploaded directly
         # via the presigned POST from presign()) — point the FieldFile at it
         # rather than re-uploading through Django.
-        asset.file.name = payload.validated_data["key"]
+        asset.file.name = key
         asset.save()
 
         from jobs.queue import enqueue_probe
@@ -240,12 +321,13 @@ class MediaAssetViewSet(WorkspaceScopedViewSet):
         payload = MediaPresignRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         workspace = payload.validated_data["workspace"]
-        if workspace.pk not in workspaces_for_user(request.user):
-            raise PermissionDenied("You are not a member of this workspace.")
+        require_role(request.user, workspace.pk, self.write_role)
 
         safe_name = Path(payload.validated_data["filename"]).name
-        key = f"media/originals/{uuid.uuid4()}/{safe_name}"
+        key = f"{_presign_prefix(workspace.pk)}{uuid.uuid4()}/{safe_name}"
         content_type = payload.validated_data["content_type"]
+        if not content_type.startswith(_ALLOWED_MEDIA_PREFIXES):
+            raise ValidationError({"content_type": "Only image and video files can be uploaded."})
 
         client = default_storage.connection.meta.client
         presigned = client.generate_presigned_post(
@@ -271,12 +353,14 @@ class VoiceProfileViewSet(WorkspaceScopedViewSet):
 class ProviderKeyViewSet(WorkspaceScopedViewSet):
     serializer_class = ProviderKeySerializer
     queryset = ProviderKey.objects.all()
+    write_role = Membership.ROLE_ADMIN
 
 
 @_workspace_list()
 class AppCredentialViewSet(WorkspaceScopedViewSet):
     serializer_class = AppCredentialSerializer
     queryset = AppCredential.objects.all()
+    write_role = Membership.ROLE_ADMIN
 
 
 @_workspace_list(OpenApiParameter("channel", int, required=False, description="Only this channel's slots."))
@@ -368,6 +452,26 @@ class PublishAttemptViewSet(viewsets.ReadOnlyModelViewSet):
 class PostViewSet(WorkspaceScopedViewSet):
     serializer_class = PostSerializer
     queryset = Post.objects.prefetch_related("targets__channel")
+    # Contributors draft and submit; publishing decisions need an editor.
+    write_role = Membership.ROLE_CONTRIBUTOR
+    action_roles = {
+        "destroy": Membership.ROLE_EDITOR,
+        "schedule": Membership.ROLE_EDITOR,
+        "queue": Membership.ROLE_EDITOR,
+        "cancel": Membership.ROLE_EDITOR,
+        "retry_target": Membership.ROLE_EDITOR,
+        # client_reviewer ranks with viewer; approve/request_changes check
+        # for it explicitly.
+        "approve": Membership.ROLE_VIEWER,
+        "request_changes": Membership.ROLE_VIEWER,
+    }
+
+    def _check_can_review(self, post: Post) -> None:
+        role = role_in(self.request.user, post.workspace_id)
+        if self.request.user.is_superuser or role == Membership.ROLE_CLIENT_REVIEWER:
+            return
+        if not has_role(self.request.user, post.workspace_id, Membership.ROLE_EDITOR):
+            raise PermissionDenied("Reviewing posts needs the editor or client reviewer role.")
 
     def get_queryset(self):
         # No django-filter in this project (see WorkspaceScopedViewSet) — just
@@ -476,6 +580,7 @@ class PostViewSet(WorkspaceScopedViewSet):
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
         post = self.get_object()
+        self._check_can_review(post)
         if post.status != Post.STATUS_IN_REVIEW:
             raise ValidationError(f"Cannot approve a post in status '{post.status}'.")
         post.status = Post.STATUS_APPROVED
@@ -487,6 +592,7 @@ class PostViewSet(WorkspaceScopedViewSet):
     def request_changes(self, request, pk=None):
         """Sends an in-review post back to draft for edits."""
         post = self.get_object()
+        self._check_can_review(post)
         if post.status != Post.STATUS_IN_REVIEW:
             raise ValidationError(f"Cannot request changes on a post in status '{post.status}'.")
         post.status = Post.STATUS_DRAFT
@@ -593,9 +699,11 @@ class PostViewSet(WorkspaceScopedViewSet):
 
         from .services.queueing import NoOpenSlotError, next_open_slot_run_at
 
-        workspace_id = request.data.get("workspace")
-        if not workspace_id or int(workspace_id) not in workspaces_for_user(request.user):
-            raise PermissionDenied("You are not a member of this workspace.")
+        try:
+            workspace_id = int(request.data.get("workspace") or 0)
+        except (TypeError, ValueError):
+            raise ValidationError({"workspace": "Must be an integer."}) from None
+        require_role(request.user, workspace_id, Membership.ROLE_EDITOR)
 
         if "file" in request.FILES:
             raw = request.FILES["file"].read().decode("utf-8-sig")
@@ -762,9 +870,11 @@ class OAuthStartView(APIView):
     def post(self, request):
         from .services import oauth
 
-        workspace_id = request.data.get("workspace")
-        if not workspace_id or not user_can_access_workspace(request.user, int(workspace_id)):
-            raise PermissionDenied("You are not a member of this workspace.")
+        try:
+            workspace_id = int(request.data.get("workspace") or 0)
+        except (TypeError, ValueError):
+            raise ValidationError({"workspace": "Must be an integer."}) from None
+        require_role(request.user, workspace_id, Membership.ROLE_ADMIN)
 
         connector_slug = request.data.get("connector_slug")
         redirect_uri = request.data.get("redirect_uri")
@@ -774,7 +884,8 @@ class OAuthStartView(APIView):
 
         try:
             result = oauth.start(
-                workspace_id=int(workspace_id),
+                user_id=request.user.pk,
+                workspace_id=workspace_id,
                 connector_slug=connector_slug,
                 display_name=display_name,
                 redirect_uri=redirect_uri,
@@ -816,9 +927,14 @@ class OAuthCompleteView(APIView):
 
         try:
             channel = oauth.complete(
-                connector_slug=connector_slug, code=code, redirect_uri=redirect_uri, provider_state=provider_state
+                connector_slug=connector_slug,
+                code=code,
+                redirect_uri=redirect_uri,
+                provider_state=provider_state,
+                authorize=lambda workspace_id: require_role(request.user, workspace_id, Membership.ROLE_ADMIN),
+                user_id=request.user.pk,
             )
-        except oauth.MissingAppCredential as exc:
+        except (oauth.MissingAppCredential, oauth.StateMismatch) as exc:
             raise ValidationError(str(exc)) from exc
         except signing.BadSignature as exc:
             # A forged, truncated, or (SignatureExpired, a subclass) stale
@@ -831,14 +947,8 @@ class OAuthCompleteView(APIView):
             raise ValidationError(exc.safe_detail) from exc
         except requests.RequestException:
             return _platform_unreachable()
-        if not user_can_access_workspace(request.user, channel.workspace_id):
-            # The signed state was valid but doesn't belong to a workspace
-            # this user can access — shouldn't happen outside a forged
-            # request, since the state was signed by us in OAuthStartView.
-            channel.delete()
-            raise PermissionDenied("This authorization does not belong to a workspace you can access.")
 
-        channel.created_by = request.user
+        channel.created_by = channel.created_by or request.user
         channel.save(update_fields=["created_by"])
         return Response(ChannelSerializer(channel).data, status=status.HTTP_201_CREATED)
 
@@ -899,6 +1009,13 @@ class ValidateView(APIView):
                 ],
             }
         )
+
+
+_ALLOWED_MEDIA_PREFIXES = ("image/", "video/")
+
+
+def _presign_prefix(workspace_id: int) -> str:
+    return f"media/originals/ws{workspace_id}/"
 
 
 def _platform_unreachable() -> Response:

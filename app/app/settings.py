@@ -156,7 +156,7 @@ TEMPLATES = [
 # BasicAuthentication is deliberately absent: it invites credentials on every
 # request and no client needs it. SessionAuthentication is kept only in DEBUG so
 # the browsable API stays usable locally.
-_AUTH_CLASSES = ["rest_framework.authentication.TokenAuthentication"]
+_AUTH_CLASSES = ["omnipost_api.authentication.ExpiringTokenAuthentication"]
 if DEBUG:
     _AUTH_CLASSES.append("rest_framework.authentication.SessionAuthentication")
 
@@ -167,6 +167,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 25,
+    # Login/signup/reset and AI calls get their own tighter scopes
+    # (throttle_scope on those views); everything else gets the user/anon caps.
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.environ.get("THROTTLE_ANON", "120/min"),
+        "user": os.environ.get("THROTTLE_USER", "3000/hour"),
+        "auth": os.environ.get("THROTTLE_AUTH", "10/min"),
+        "ai": os.environ.get("THROTTLE_AI", "30/min"),
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -320,7 +333,37 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-ACCOUNT_EMAIL_VERIFICATION = "none"
+# Where emails (password reset, verification) link back to.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# "optional": a verification email is sent on signup, but an unverified
+# address can still sign in. "mandatory" blocks sign-in until verified.
+ACCOUNT_EMAIL_VERIFICATION = os.environ.get("ACCOUNT_EMAIL_VERIFICATION", "optional")
+ACCOUNT_SIGNUP_FIELDS = ["email*", "username*", "password1*", "password2*"]
+ACCOUNT_CONFIRM_EMAIL_ON_GET = False
+ACCOUNT_ADAPTER = "omnipost_api.auth_adapter.FrontendAccountAdapter"
+
+# Days a sign-in token stays valid. 0 disables expiry.
+AUTH_TOKEN_TTL_DAYS = int(os.environ.get("AUTH_TOKEN_TTL_DAYS", "30"))
+
+REST_AUTH = {
+    "TOKEN_CREATOR": "omnipost_api.authentication.create_token",
+    "PASSWORD_RESET_SERIALIZER": "omnipost_api.auth_serializers.FrontendPasswordResetSerializer",
+    "OLD_PASSWORD_FIELD_ENABLED": True,
+}
+
+# Email. Without EMAIL_HOST, mail is printed to the console (dev / self-host
+# without SMTP); set EMAIL_HOST etc. to actually deliver.
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "OmniPost <no-reply@localhost>")
 
 
 # --------------------------------------------------------------------------
@@ -401,9 +444,11 @@ if SENTRY_DSN and not TESTING:
         environment=os.environ.get("SENTRY_ENVIRONMENT", "production" if not DEBUG else "development"),
         release=GIT_SHA or None,
         traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0")),
-        # Never send request bodies/headers by default — they can carry a
-        # channel's decrypted credentials if an exception fires mid-publish.
+        # Never send request bodies/headers or stack-frame locals — they can
+        # carry a channel's decrypted credentials if an exception fires
+        # mid-publish.
         send_default_pii=False,
+        include_local_variables=False,
     )
 
 # Shared secret gating GET /metrics (Prometheus scrape target — see

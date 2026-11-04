@@ -14,6 +14,7 @@ multi-container deployment cleanly.
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 import django_rq
@@ -38,9 +39,13 @@ logger = logging.getLogger(__name__)
 @require_GET
 def metrics_view(request: HttpRequest) -> HttpResponse:
     token = settings.METRICS_AUTH_TOKEN
-    if token:
+    if not token:
+        # Open only in development; production must set METRICS_AUTH_TOKEN.
+        if not settings.DEBUG:
+            return HttpResponse("Not found", status=404)
+    else:
         provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if provided != token and request.GET.get("token") != token:
+        if not hmac.compare_digest(provided.encode(), token.encode()):
             return HttpResponse("Forbidden", status=403)
 
     registry = CollectorRegistry()
@@ -75,8 +80,10 @@ def metrics_view(request: HttpRequest) -> HttpResponse:
         ["connector_slug", "health"],
         registry=registry,
     )
-    for row in Channel.objects.values("connector_slug", "health").annotate(count=Count("id")):
-        channel_health.labels(connector_slug=row["connector_slug"], health=row["health"]).set(row["count"])
+    for health_row in Channel.objects.values("connector_slug", "health").annotate(count=Count("id")):
+        channel_health.labels(connector_slug=health_row["connector_slug"], health=health_row["health"]).set(
+            health_row["count"]
+        )
 
     ai_usage = Gauge(
         "omnipost_ai_usage_committed",
@@ -85,7 +92,7 @@ def metrics_view(request: HttpRequest) -> HttpResponse:
         ["feature"],
         registry=registry,
     )
-    for row in UsageCounter.objects.values("feature").annotate(total=Sum("committed")):
-        ai_usage.labels(feature=row["feature"]).set(row["total"] or 0)
+    for usage_row in UsageCounter.objects.values("feature").annotate(total=Sum("committed")):
+        ai_usage.labels(feature=usage_row["feature"]).set(usage_row["total"] or 0)
 
     return HttpResponse(generate_latest(registry), content_type=CONTENT_TYPE_LATEST)

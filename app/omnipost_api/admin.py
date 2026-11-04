@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import (
     AppCredential,
@@ -26,7 +27,9 @@ from .models import (
 
 
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(DjangoUserAdmin):
+    # Django's UserAdmin hashes passwords via its own form; a plain
+    # ModelAdmin stored whatever was typed into the hash field.
     list_display = ("username", "is_superuser", "first_name", "last_name", "email", "is_active", "date_joined")
     list_filter = ("last_login", "is_superuser", "is_staff", "is_active", "date_joined")
     raw_id_fields = ("groups", "user_permissions")

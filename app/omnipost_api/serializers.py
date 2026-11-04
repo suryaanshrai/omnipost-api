@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.db import models as dj_models
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -24,6 +25,87 @@ from .models import (
 )
 
 
+def _workspace_ids(context) -> list[int] | None:
+    request = context.get("request")
+    if request is None or not getattr(request.user, "is_authenticated", False):
+        return None
+    if "_workspace_ids" not in context:
+        from .permissions import workspaces_for_user
+
+        context["_workspace_ids"] = workspaces_for_user(request.user)
+    return context["_workspace_ids"]
+
+
+def _scope_related_field(field, workspace_ids: list[int]) -> None:
+    """Narrow a related field's choices to rows in the user's workspaces, so
+    an id from someone else's workspace is "does not exist", not accepted."""
+    target = field.child_relation if isinstance(field, serializers.ManyRelatedField) else field
+    if not isinstance(target, serializers.PrimaryKeyRelatedField) or target.queryset is None:
+        return
+    model = target.queryset.model
+    field_names = {f.name for f in model._meta.get_fields()}
+    if model is Workspace:
+        target.queryset = target.queryset.filter(pk__in=workspace_ids)
+    elif model is Organization:
+        target.queryset = target.queryset.filter(workspaces__id__in=workspace_ids).distinct()
+    elif "workspace" in field_names:
+        target.queryset = target.queryset.filter(workspace_id__in=workspace_ids)
+    elif "channel" in field_names:
+        target.queryset = target.queryset.filter(channel__workspace_id__in=workspace_ids)
+    elif "post" in field_names:
+        target.queryset = target.queryset.filter(post__workspace_id__in=workspace_ids)
+
+
+def _foreign_workspace_refs(value, workspace_id: int) -> bool:
+    """True if any model instance inside `value` (nested dicts/lists of
+    validated data) belongs to a workspace other than `workspace_id`."""
+    if isinstance(value, dj_models.Model):
+        if isinstance(value, Workspace):
+            return False
+        owner = getattr(value, "workspace_id", None)
+        if owner is None and hasattr(value, "channel_id"):
+            owner = getattr(value, "channel").workspace_id  # noqa: B009 - not every Model has .channel
+        return owner is not None and owner != workspace_id
+    if isinstance(value, dict):
+        return any(_foreign_workspace_refs(v, workspace_id) for v in value.values())
+    if isinstance(value, list | tuple):
+        return any(_foreign_workspace_refs(v, workspace_id) for v in value)
+    return False
+
+
+class WorkspaceScopedSerializer(serializers.ModelSerializer):
+    """Base for every serializer whose rows belong to a workspace:
+    * related-object ids are limited to the request user's workspaces;
+    * every referenced object must belong to the row's own workspace (a post
+      in workspace A can't target workspace B's channel, even when the user
+      is a member of both);
+    * `workspace` (and anything in `immutable_on_update`) can't be changed
+      once the row exists."""
+
+    immutable_on_update: tuple[str, ...] = ("workspace",)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        workspace_ids = _workspace_ids(self.context)
+        if workspace_ids is not None:
+            for field in fields.values():
+                _scope_related_field(field, workspace_ids)
+        if isinstance(self.instance, dj_models.Model):
+            for name in self.immutable_on_update:
+                if name in fields:
+                    fields[name].read_only = True
+        return fields
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        workspace = attrs.get("workspace") or getattr(self.instance, "workspace", None)
+        if workspace is None and attrs.get("channel") is not None:
+            workspace = attrs["channel"].workspace
+        if workspace is not None and _foreign_workspace_refs(attrs, workspace.pk):
+            raise serializers.ValidationError("Everything referenced must belong to the same workspace.")
+        return attrs
+
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -46,7 +128,10 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     # ModelSerializer would otherwise mark both required — which, until
     # this override, silently defeated that fallback: a POST with only
     # `name` was rejected by validation before perform_create ever ran.
-    organization = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all(), required=False)
+    # Always derived server-side: a new workspace gets its own Organization
+    # (WorkspaceViewSet.perform_create). Accepting a client-supplied id let
+    # anyone file a workspace under someone else's organization.
+    organization = serializers.PrimaryKeyRelatedField(read_only=True)
     # Explicitly declaring this field (rather than letting ModelSerializer
     # auto-generate it) bypasses DRF's automatic UniqueValidator injection
     # for unique model fields, so it's added back by hand — a duplicate
@@ -61,16 +146,40 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
-class MembershipSerializer(serializers.ModelSerializer):
+class MembershipSerializer(WorkspaceScopedSerializer):
     user = UserSerializer(read_only=True)
+    # Write-only on create: who to add, by username or email. Only existing
+    # accounts can be added; MembershipViewSet checks the caller is an admin.
+    username = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Membership
-        fields = ["id", "workspace", "user", "role", "created_at"]
+        fields = ["id", "workspace", "user", "role", "created_at", "username"]
         read_only_fields = ["id", "created_at"]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is None:
+            handle = (attrs.pop("username", "") or "").strip()
+            if not handle:
+                raise serializers.ValidationError({"username": "Give the username or email of the person to add."})
+            user = User.objects.filter(dj_models.Q(username__iexact=handle) | dj_models.Q(email__iexact=handle)).first()
+            if user is None:
+                raise serializers.ValidationError({"username": "No OmniPost account with that username or email."})
+            if Membership.objects.filter(workspace=attrs["workspace"], user=user).exists():
+                raise serializers.ValidationError({"username": "That person is already a member."})
+            attrs["user"] = user
+        else:
+            attrs.pop("username", None)
+        return attrs
 
-class ChannelSerializer(serializers.ModelSerializer):
+
+_DISCORD_WEBHOOK_HOSTS = {"discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com"}
+
+
+class ChannelSerializer(WorkspaceScopedSerializer):
+    immutable_on_update = ("workspace", "connector_slug")
+
     # Write-only: a dict of connector-specific credential fields (e.g.
     # {"ACCESS_TOKEN": "...", "IG_ID": "..."}). Never round-tripped back —
     # GET /channels/ never exposes secret values, matching each connector's
@@ -96,6 +205,33 @@ class ChannelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "health", "health_detail", "created_at"]
 
+    def validate_connector_slug(self, value):
+        from connectors import registry
+
+        if value not in registry.all_slugs():
+            raise serializers.ValidationError("Unknown platform.")
+        return value
+
+    def validate_credentials(self, value):
+        """Credentials the server will later send requests to must point at
+        the real platform, not at an address on the server's own network."""
+        from connectors.netguard import UnsafeURL, assert_public_domain
+
+        webhook = value.get("WEBHOOK_URL")
+        if webhook is not None:
+            from urllib.parse import urlsplit
+
+            parts = urlsplit(webhook)
+            if parts.scheme != "https" or parts.hostname not in _DISCORD_WEBHOOK_HOSTS:
+                raise serializers.ValidationError({"WEBHOOK_URL": "Paste a Discord webhook URL (https://discord.com/…)."})
+        domain = value.get("INSTANCE_DOMAIN")
+        if domain is not None:
+            try:
+                assert_public_domain(domain)
+            except UnsafeURL as exc:
+                raise serializers.ValidationError({"INSTANCE_DOMAIN": str(exc)}) from exc
+        return value
+
     def create(self, validated_data):
         credentials = validated_data.pop("credentials", None)
         channel = Channel.objects.create(**validated_data)
@@ -111,7 +247,7 @@ class ChannelSerializer(serializers.ModelSerializer):
         return instance
 
 
-class MediaAssetSerializer(serializers.ModelSerializer):
+class MediaAssetSerializer(WorkspaceScopedSerializer):
     class Meta:
         model = MediaAsset
         fields = [
@@ -209,7 +345,7 @@ class ValidateRequestSerializer(serializers.Serializer):
     )
 
 
-class PostTargetPartWriteSerializer(serializers.ModelSerializer):
+class PostTargetPartWriteSerializer(WorkspaceScopedSerializer):
     class Meta:
         model = PostTargetPart
         fields = ["sequence", "text", "media", "delay_after_s"]
@@ -223,7 +359,7 @@ class PostTargetPartSerializer(serializers.ModelSerializer):
 
 
 
-class PostTargetWriteSerializer(serializers.ModelSerializer):
+class PostTargetWriteSerializer(WorkspaceScopedSerializer):
     # Write-only: a thread/drip's ordered posts. Only meaningful for a
     # connector whose capabilities declare supports_threads — see
     # connectors/base.py::Connector.validate().
@@ -288,7 +424,7 @@ class PostMetricSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class PostSerializer(serializers.ModelSerializer):
+class PostSerializer(WorkspaceScopedSerializer):
     targets = PostTargetSerializer(many=True, read_only=True)
     # Write-only: creates PostTarget rows alongside the Post in one call.
     target_specs = PostTargetWriteSerializer(many=True, write_only=True, required=False)
@@ -386,14 +522,14 @@ class PublishAttemptSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class VoiceProfileSerializer(serializers.ModelSerializer):
+class VoiceProfileSerializer(WorkspaceScopedSerializer):
     class Meta:
         model = VoiceProfile
         fields = ["id", "workspace", "name", "style_summary", "example_posts", "is_default", "updated_at"]
         read_only_fields = ["id", "updated_at"]
 
 
-class ProviderKeySerializer(serializers.ModelSerializer):
+class ProviderKeySerializer(WorkspaceScopedSerializer):
     api_key = serializers.CharField(write_only=True)
 
     class Meta:
@@ -423,8 +559,31 @@ class ProviderKeySerializer(serializers.ModelSerializer):
         key.save(update_fields=["encrypted_key"])
         return key
 
+    def update(self, instance, validated_data):
+        """A new api_key is validated and re-encrypted; before this, a PATCH
+        with a new key returned 200 and silently kept the old one."""
+        from ai import providers as ai_providers
+        from ai.errors import AIProviderError
+        from django.conf import settings
+        from django.utils import timezone
 
-class AppCredentialSerializer(serializers.ModelSerializer):
+        from . import crypto
+
+        api_key = validated_data.pop("api_key", None)
+        instance = super().update(instance, validated_data)
+        if api_key:
+            try:
+                ai_providers.ping(instance.provider, api_key, settings.AI_TEXT_MODELS[instance.provider])
+            except AIProviderError as exc:
+                detail = f"Could not validate this key: {exc.safe_detail}"
+                raise serializers.ValidationError({"api_key": detail}) from exc
+            instance.encrypted_key = crypto.encrypt(api_key, aad=instance._aad())
+            instance.last_validated_at = timezone.now()
+            instance.save(update_fields=["encrypted_key", "last_validated_at"])
+        return instance
+
+
+class AppCredentialSerializer(WorkspaceScopedSerializer):
     """client_secret is write-only and never echoed back — unlike
     ProviderKeySerializer there's no live ping to validate it against here,
     since exercising it means actually starting an OAuth flow with the
@@ -458,14 +617,16 @@ class AppCredentialSerializer(serializers.ModelSerializer):
         return instance
 
 
-class QueueSlotSerializer(serializers.ModelSerializer):
+class QueueSlotSerializer(WorkspaceScopedSerializer):
+    immutable_on_update = ("channel",)
+
     class Meta:
         model = QueueSlot
         fields = ["id", "channel", "weekday", "time_of_day", "is_active"]
         read_only_fields = ["id"]
 
 
-class BlackoutWindowSerializer(serializers.ModelSerializer):
+class BlackoutWindowSerializer(WorkspaceScopedSerializer):
     class Meta:
         model = BlackoutWindow
         fields = ["id", "workspace", "channel", "label", "starts_at", "ends_at", "is_active"]
@@ -479,7 +640,7 @@ class BlackoutWindowSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class RecurrenceRuleSerializer(serializers.ModelSerializer):
+class RecurrenceRuleSerializer(WorkspaceScopedSerializer):
     class Meta:
         model = RecurrenceRule
         fields = [

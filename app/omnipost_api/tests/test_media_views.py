@@ -50,7 +50,10 @@ def test_upload_rejects_workspace_the_user_cannot_access(db, django_user_model):
         {"workspace": other_workspace.pk, "kind": "image", "file": _jpeg_upload()},
         format="multipart",
     )
-    assert response.status_code == 403
+    # Another workspace's id is "does not exist" (400), not a 403 that
+    # would confirm the workspace exists.
+    assert response.status_code == 400
+    assert not MediaAsset.objects.exists()
 
 
 def test_presign_returns_501_when_s3_not_configured(db, django_user_model):
@@ -126,12 +129,39 @@ def test_confirm_from_key_creates_asset_pointing_at_existing_object(db, django_u
     enqueued = []
     monkeypatch.setattr("jobs.queue.enqueue_probe", lambda asset_id: enqueued.append(asset_id))
 
+    key = f"media/originals/ws{workspace.pk}/abc/clip.mp4"
     response = client.post(
         "/media/",
-        {"workspace": workspace.pk, "kind": "video", "key": "media/originals/abc/clip.mp4"},
+        {"workspace": workspace.pk, "kind": "video", "key": key},
         format="json",
     )
     assert response.status_code == 201, response.data
     asset = MediaAsset.objects.get(pk=response.data["id"])
-    assert asset.file.name == "media/originals/abc/clip.mp4"
+    assert asset.file.name == key
     assert enqueued == [asset.pk]
+
+
+def test_confirm_rejects_key_outside_this_workspace(db, django_user_model, monkeypatch):
+    from omnipost_api import views as views_module
+
+    user = django_user_model.objects.create_user(username="asha2", password="x")
+    workspace = user.memberships.get().workspace
+    client = _client_for(user)
+    monkeypatch.setattr(views_module.settings, "S3_MEDIA_ENABLED", True)
+    monkeypatch.setattr("jobs.queue.enqueue_probe", lambda asset_id: None)
+
+    for key in (f"media/originals/ws{workspace.pk + 1}/abc/clip.mp4", "media/originals/abc/clip.mp4"):
+        response = client.post("/media/", {"workspace": workspace.pk, "kind": "video", "key": key}, format="json")
+        assert response.status_code == 400
+    assert not MediaAsset.objects.exists()
+
+
+def test_upload_rejects_non_media_content_type(db, django_user_model):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    user = django_user_model.objects.create_user(username="html", password="x")
+    workspace = user.memberships.get().workspace
+    client = _client_for(user)
+    page = SimpleUploadedFile("x.html", b"<script>alert(1)</script>", content_type="text/html")
+    response = client.post("/media/", {"workspace": workspace.pk, "kind": "image", "file": page}, format="multipart")
+    assert response.status_code == 400

@@ -7,6 +7,7 @@ why the round trip needs two independently-signed layers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from connectors.registry import get as get_connector
@@ -43,36 +44,86 @@ def _own_app_extra(workspace_id: int, connector_slug: str) -> dict[str, str]:
 
 
 def start(
-    *, workspace_id: int, connector_slug: str, display_name: str, redirect_uri: str, extra: dict[str, str]
+    *,
+    workspace_id: int,
+    connector_slug: str,
+    display_name: str,
+    redirect_uri: str,
+    extra: dict[str, str],
+    user_id: int | None = None,
 ) -> OAuthStart:
     connector = get_connector(connector_slug)
     merged_extra = dict(extra)
     if connector.requires_own_app:
         merged_extra.update(_own_app_extra(workspace_id, connector_slug))
     caller_state = signing.dumps(
-        {"workspace_id": workspace_id, "connector_slug": connector_slug, "display_name": display_name},
+        {
+            "workspace_id": workspace_id,
+            "connector_slug": connector_slug,
+            "display_name": display_name,
+            "user_id": user_id,
+        },
         salt=_SIGNING_SALT,
     )
     authorization = connector.authorize_url(redirect_uri=redirect_uri, state=caller_state, **merged_extra)
     return OAuthStart(authorize_url=authorization.authorize_url, provider_state=authorization.state)
 
 
-def complete(*, connector_slug: str, code: str, redirect_uri: str, provider_state: str) -> Channel:
+class StateMismatch(Exception):
+    """The callback doesn't match the flow that was started: another user's
+    state, or a different connector than the one that signed it."""
+
+
+def complete(
+    *,
+    connector_slug: str,
+    code: str,
+    redirect_uri: str,
+    provider_state: str,
+    authorize: Callable[[int], None] | None = None,
+    user_id: int | None = None,
+) -> Channel:
+    """Finishes an OAuth connect. `authorize(workspace_id)` runs before the
+    code is exchanged or anything is written, so a caller without access
+    never creates (even briefly) a channel holding real credentials.
+
+    Reconnecting an account that's already a channel in this workspace
+    refreshes that channel in place instead of creating a duplicate, so its
+    scheduled posts keep working."""
     connector = get_connector(connector_slug)
     caller_state = connector.unwrap_caller_state(provider_state)
     session = signing.loads(caller_state, salt=_SIGNING_SALT, max_age=_SIGNING_MAX_AGE_S)
+    if session["connector_slug"] != connector_slug:
+        raise StateMismatch("This sign-in was started for a different platform.")
+    if session.get("user_id") is not None and user_id is not None and session["user_id"] != user_id:
+        raise StateMismatch("This sign-in was started by a different account.")
+    workspace_id = session["workspace_id"]
+    if authorize is not None:
+        authorize(workspace_id)
 
     exchange_extra = {"state": provider_state}
     if connector.requires_own_app:
-        exchange_extra.update(_own_app_extra(session["workspace_id"], connector_slug))
+        exchange_extra.update(_own_app_extra(workspace_id, connector_slug))
 
     credentials = connector.exchange_code(code=code, redirect_uri=redirect_uri, **exchange_extra)
+    external_id = credentials.external_account_id or ""
 
-    channel = Channel.objects.create(
-        workspace_id=session["workspace_id"],
-        connector_slug=session["connector_slug"],
-        display_name=session["display_name"],
-        external_account_id=credentials.external_account_id or "",
-    )
+    channel = None
+    if external_id:
+        channel = Channel.objects.filter(
+            workspace_id=workspace_id, connector_slug=connector_slug, external_account_id=external_id
+        ).first()
+    if channel is None:
+        channel = Channel.objects.create(
+            workspace_id=workspace_id,
+            connector_slug=connector_slug,
+            display_name=session["display_name"],
+            external_account_id=external_id,
+        )
+    else:
+        channel.health = Channel.HEALTH_HEALTHY
+        channel.health_detail = ""
     channel.set_credentials(credentials.values)
+    channel.token_expires_at = connector.token_expiry(credentials)
+    channel.save()
     return channel

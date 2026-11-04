@@ -28,6 +28,7 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -114,7 +115,11 @@ class YouTubeConnector(Connector):
         channel_id = items[0]["id"] if items else ""
 
         return ChannelCredentials(
-            values={"ACCESS_TOKEN": access_token, "REFRESH_TOKEN": token_data.get("refresh_token", "")},
+            values={
+                "ACCESS_TOKEN": access_token,
+                "REFRESH_TOKEN": token_data.get("refresh_token", ""),
+                **expiry_values(token_data),
+            },
             external_account_id=channel_id,
         )
 
@@ -134,8 +139,9 @@ class YouTubeConnector(Connector):
         )
         if not response.ok:
             raise AuthExpired("Google rejected this channel's refresh token.", raw_detail=response.text[:500])
+        token_data = response.json()
         return ChannelCredentials(
-            values={**credentials.values, "ACCESS_TOKEN": response.json()["access_token"]},
+            values={**credentials.values, "ACCESS_TOKEN": token_data["access_token"], **expiry_values(token_data)},
             external_account_id=credentials.external_account_id,
         )
 

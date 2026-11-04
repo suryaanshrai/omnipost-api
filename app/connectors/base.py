@@ -307,9 +307,15 @@ class Connector(ABC):
         return credentials
 
     def token_expiry(self, credentials: ChannelCredentials) -> datetime | None:
-        """When the access token expires, if known. Drives the maintenance
-        cron's refresh scheduling (Phase 2)."""
-        return None
+        """When the access token expires, if known. Drives jobs/health.py's
+        refresh sweep. Connectors record it as EXPIRES_AT via expiry_values()."""
+        raw = credentials.get("EXPIRES_AT")
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
 
     def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
         """Best-effort engagement metrics for a published post (Phase 7).
@@ -320,3 +326,18 @@ class Connector(ABC):
         default (empty dict) means "no metrics available for this platform
         yet", which jobs/metrics.py treats as a no-op, not an error."""
         return {}
+
+
+def expiry_values(token_data: dict[str, Any]) -> dict[str, str]:
+    """{"EXPIRES_AT": iso} from an OAuth token response's `expires_in`, or {}
+    when the platform didn't say. Merged into a connector's credential values
+    so token_expiry() (and the refresh sweep) knows when to refresh."""
+    from datetime import UTC, timedelta
+
+    try:
+        seconds = int(token_data.get("expires_in") or 0)
+    except (TypeError, ValueError):
+        return {}
+    if seconds <= 0:
+        return {}
+    return {"EXPIRES_AT": (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()}

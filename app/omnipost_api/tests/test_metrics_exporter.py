@@ -16,12 +16,14 @@ def fake_rq_queues(monkeypatch):
     monkeypatch.setattr("omnipost_api.metrics_exporter.django_rq.get_queue", lambda name: _FakeQueue())
 
 
-def test_metrics_endpoint_is_open_by_default(db):
+@override_settings(DEBUG=True, METRICS_AUTH_TOKEN="")
+def test_metrics_endpoint_is_open_in_development(db):
     response = Client().get("/metrics")
     assert response.status_code == 200
     assert b'omnipost_queue_depth{queue="publish"} 3.0' in response.content
 
 
+@override_settings(DEBUG=True, METRICS_AUTH_TOKEN="")
 def test_metrics_reflects_publish_attempt_and_channel_counts(db, django_user_model):
     user = django_user_model.objects.create_user(username="dana", password="x")
     workspace = user.memberships.get().workspace
@@ -41,4 +43,11 @@ def test_metrics_endpoint_requires_token_when_configured(db):
     client = Client()
     assert client.get("/metrics").status_code == 403
     assert client.get("/metrics", headers={"Authorization": "Bearer secret-token"}).status_code == 200
-    assert client.get("/metrics?token=secret-token").status_code == 200
+    # Query-string tokens end up in access logs, so they're not accepted.
+    assert client.get("/metrics?token=secret-token").status_code == 403
+    assert client.get("/metrics", headers={"Authorization": "Bearer wrong"}).status_code == 403
+
+
+@override_settings(METRICS_AUTH_TOKEN="", DEBUG=False)
+def test_metrics_endpoint_is_off_in_production_without_a_token(db):
+    assert Client().get("/metrics").status_code == 404

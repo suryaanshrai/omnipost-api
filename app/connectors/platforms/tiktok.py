@@ -21,7 +21,15 @@ from urllib.parse import quote
 
 import requests
 
-from ..base import ChannelCredentials, Connector, OAuthAuthorization, PublishContext, PublishOutcome, PublishState
+from ..base import (
+    ChannelCredentials,
+    Connector,
+    OAuthAuthorization,
+    PublishContext,
+    PublishOutcome,
+    PublishState,
+    expiry_values,
+)
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
 
@@ -105,6 +113,7 @@ class TikTokConnector(Connector):
             values={
                 "ACCESS_TOKEN": token_data["access_token"],
                 "REFRESH_TOKEN": token_data.get("refresh_token", ""),
+                **expiry_values(token_data),
             },
             external_account_id=token_data.get("open_id", ""),
         )
@@ -132,6 +141,7 @@ class TikTokConnector(Connector):
                 **credentials.values,
                 "ACCESS_TOKEN": token_data["access_token"],
                 "REFRESH_TOKEN": token_data.get("refresh_token", refresh_token),
+                **expiry_values(token_data),
             },
             external_account_id=credentials.external_account_id,
         )

@@ -30,6 +30,7 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
@@ -106,10 +107,15 @@ class ThreadsConnector(Connector):
             },
             timeout=15,
         )
-        access_token = long_lived.json()["access_token"] if long_lived.ok else short["access_token"]
+        token_data = long_lived.json() if long_lived.ok else short
+        access_token = token_data["access_token"]
 
         return ChannelCredentials(
-            values={"ACCESS_TOKEN": access_token, "THREADS_USER_ID": str(short["user_id"])},
+            values={
+                "ACCESS_TOKEN": access_token,
+                "THREADS_USER_ID": str(short["user_id"]),
+                **expiry_values(token_data),
+            },
             external_account_id=str(short["user_id"]),
         )
 
@@ -121,8 +127,9 @@ class ThreadsConnector(Connector):
         )
         if not response.ok:
             raise AuthExpired("Threads rejected this channel's refresh attempt.", raw_detail=response.text[:500])
+        token_data = response.json()
         return ChannelCredentials(
-            values={**credentials.values, "ACCESS_TOKEN": response.json()["access_token"]},
+            values={**credentials.values, "ACCESS_TOKEN": token_data["access_token"], **expiry_values(token_data)},
             external_account_id=credentials.external_account_id,
         )
 

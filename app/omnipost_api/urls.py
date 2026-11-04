@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_ai
+from . import auth, views, views_ai
 
 router = DefaultRouter()
 router.register("workspaces", views.WorkspaceViewSet, basename="workspace")
@@ -31,6 +31,15 @@ urlpatterns = [
     path("ai/alt-text/", views_ai.AltTextView.as_view(), name="ai-alt-text"),
     path("ai/images/", views_ai.GenerateImageView.as_view(), name="ai-images"),
     path("ai/usage/", views_ai.UsageView.as_view(), name="ai-usage"),
+    # Throttled versions of dj-rest-auth's views; listed first so they win.
+    path("auth/login/", auth.ThrottledLoginView.as_view(), name="rest_login"),
+    path("auth/password/reset/", auth.ThrottledPasswordResetView.as_view(), name="rest_password_reset"),
+    path(
+        "auth/password/reset/confirm/",
+        auth.ThrottledPasswordResetConfirmView.as_view(),
+        name="rest_password_reset_confirm",
+    ),
+    path("auth/registration/", auth.ThrottledRegisterView.as_view(), name="rest_register"),
     path("auth/", include("dj_rest_auth.urls")),
     path("auth/registration/", include("dj_rest_auth.registration.urls")),
 ]
