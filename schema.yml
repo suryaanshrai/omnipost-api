@@ -373,7 +373,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Login'
+                $ref: '#/components/schemas/Token'
           description: ''
   /auth/logout/:
     post:
@@ -442,13 +442,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FrontendPasswordReset'
+              $ref: '#/components/schemas/PasswordReset'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/FrontendPasswordReset'
+              $ref: '#/components/schemas/PasswordReset'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/FrontendPasswordReset'
+              $ref: '#/components/schemas/PasswordReset'
         required: true
       security:
       - tokenAuth: []
@@ -459,7 +459,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FrontendPasswordReset'
+                $ref: '#/components/schemas/RestAuthDetail'
           description: ''
   /auth/password/reset/confirm/:
     post:
@@ -494,7 +494,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PasswordResetConfirm'
+                $ref: '#/components/schemas/RestAuthDetail'
           description: ''
   /auth/registration/:
     post:
@@ -526,7 +526,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Register'
+                $ref: '#/components/schemas/Token'
           description: ''
   /auth/registration/resend-email/:
     post:
@@ -1966,10 +1966,8 @@ paths:
     post:
       operationId: posts_cancel_create
       description: |-
-        Base for any viewset whose rows belong to a workspace: scopes the
-        queryset to workspaces the requesting user is a member of, and requires
-        `write_role` (or the action's entry in `action_roles`) in the row's
-        workspace for every write — create, update, delete and POST actions.
+        Cancels every target that hasn't started publishing. Bumping the
+        epoch makes any queued attempt a no-op when a worker reaches it.
       parameters:
       - in: path
         name: id
@@ -3685,15 +3683,6 @@ components:
       - supports_oauth
       - supports_scheduling_native
       - supports_threads
-    FrontendPasswordReset:
-      type: object
-      description: Serializer for requesting a password reset e-mail.
-      properties:
-        email:
-          type: string
-          format: email
-      required:
-      - email
     GenerateImageRequest:
       type: object
       properties:
@@ -4404,6 +4393,15 @@ components:
       - new_password1
       - new_password2
       - old_password
+    PasswordReset:
+      type: object
+      description: Serializer for requesting a password reset e-mail.
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+      - email
     PasswordResetConfirm:
       type: object
       description: Serializer for confirming a password reset attempt.
@@ -5585,6 +5583,15 @@ components:
         run_at:
           type: string
           format: date-time
+    Token:
+      type: object
+      description: Serializer for Token model.
+      properties:
+        key:
+          type: string
+          maxLength: 40
+      required:
+      - key
     User:
       type: object
       properties:
