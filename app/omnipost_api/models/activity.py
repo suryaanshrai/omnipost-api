@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.db import models
 
 from .accounts import User, Workspace
+from .channels import Channel
 
 
 class AuditEvent(models.Model):
@@ -56,3 +57,51 @@ class Notification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} for {self.user}: {self.title}"
+
+
+class Webhook(models.Model):
+    """POSTs a signed JSON event to a URL when something happens in a
+    workspace, for Zapier/n8n/your own code. See jobs/webhooks.py."""
+
+    EVENT_POST_PUBLISHED = "post.published"
+    EVENT_POST_FAILED = "post.failed"
+    EVENT_CHANNEL_BROKEN = "channel.broken"
+    EVENTS = [EVENT_POST_PUBLISHED, EVENT_POST_FAILED, EVENT_CHANNEL_BROKEN]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="webhooks")
+    url = models.URLField(max_length=500)
+    # Shared secret for the X-OmniPost-Signature HMAC. Shown once on create.
+    secret = models.CharField(max_length=64)
+    events = models.JSONField(default=list)
+    is_active = models.BooleanField(default=True)
+    last_status = models.CharField(max_length=100, blank=True, default="")
+    last_delivered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Webhook to {self.url}"
+
+
+class Feed(models.Model):
+    """An RSS or Atom feed that turns each new item into a draft for the
+    chosen channels (jobs/feeds.py). Drafts wait for a person to send them."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="feeds")
+    url = models.URLField(max_length=500)
+    channels = models.ManyToManyField(Channel, related_name="feeds", blank=True)
+    # "{title} {link}" with the item's fields filled in.
+    template = models.CharField(max_length=500, default="{title} {link}")
+    is_active = models.BooleanField(default=True)
+    seen_ids = models.JSONField(default=list, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Feed {self.url}"

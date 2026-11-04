@@ -17,7 +17,7 @@ The models are split by area; import them from here (omnipost_api.models).
 """
 
 from .accounts import Membership, Organization, User, Workspace
-from .activity import AuditEvent, Notification
+from .activity import AuditEvent, Feed, Notification, Webhook
 from .ai import ProviderKey, UsageCounter, VoiceProfile
 from .channels import AppCredential, Channel, Credential
 from .media import MediaAsset, MediaRendition
@@ -30,6 +30,7 @@ __all__ = [
     "BlackoutWindow",
     "Channel",
     "Credential",
+    "Feed",
     "MediaAsset",
     "MediaRendition",
     "Membership",
@@ -46,5 +47,6 @@ __all__ = [
     "UsageCounter",
     "User",
     "VoiceProfile",
+    "Webhook",
     "Workspace",
 ]

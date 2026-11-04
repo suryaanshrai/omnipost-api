@@ -1,5 +1,6 @@
 """Runs every periodic task in one process: reconcile lost/stuck publishes,
-fire recurrence rules, refresh expiring tokens and queue metrics polls.
+fire recurrence rules, refresh expiring tokens, queue metrics polls, turn
+new RSS items into drafts, and send Monday digests.
 
 Replaces four near-identical loop commands, each its own container (about
 100 MB of RAM apiece on a small VPS). A task that raises is logged and
@@ -29,6 +30,8 @@ class Task:
 
 
 def _tasks() -> list[Task]:
+    from jobs.digest import send_due_digests
+    from jobs.feeds import check_all_feeds
     from jobs.health import refresh_expiring_channels
     from jobs.metrics import sweep_due_metrics
     from jobs.reconciler import reconcile_once
@@ -39,6 +42,8 @@ def _tasks() -> list[Task]:
         Task("recurrence", 60, run_due_recurrences),
         Task("token-refresh", 900, refresh_expiring_channels),
         Task("metrics", 1800, sweep_due_metrics),
+        Task("feeds", 1800, check_all_feeds),
+        Task("digest", 3600, send_due_digests),
     ]
 
 

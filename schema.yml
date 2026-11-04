@@ -1179,6 +1179,175 @@ paths:
                 items:
                   $ref: '#/components/schemas/Connector'
           description: ''
+  /feeds/:
+    get:
+      operationId: feeds_list
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
+      tags:
+      - feeds
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFeedList'
+          description: ''
+    post:
+      operationId: feeds_create
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      tags:
+      - feeds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Feed'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Feed'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Feed'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feed'
+          description: ''
+  /feeds/{id}/:
+    get:
+      operationId: feeds_retrieve
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this feed.
+        required: true
+      tags:
+      - feeds
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feed'
+          description: ''
+    put:
+      operationId: feeds_update
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this feed.
+        required: true
+      tags:
+      - feeds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Feed'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Feed'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Feed'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feed'
+          description: ''
+    patch:
+      operationId: feeds_partial_update
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this feed.
+        required: true
+      tags:
+      - feeds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFeed'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFeed'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFeed'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feed'
+          description: ''
+    delete:
+      operationId: feeds_destroy
+      description: RSS/Atom feeds whose new items become drafts for the chosen channels.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this feed.
+        required: true
+      tags:
+      - feeds
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /media/:
     get:
       operationId: media_list
@@ -2123,6 +2292,29 @@ paths:
       description: |-
         Cancels every target that hasn't started publishing. Bumping the
         epoch makes any queued attempt a no-op when a worker reaches it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /posts/{id}/duplicate/:
+    post:
+      operationId: posts_duplicate_create
+      description: A new draft with the same text, media, link and channels.
       parameters:
       - in: path
         name: id
@@ -3288,6 +3480,206 @@ paths:
       responses:
         '204':
           description: No response body
+  /webhooks/:
+    get:
+      operationId: webhooks_list
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        description: Only rows belonging to this workspace (must be one of yours).
+      tags:
+      - webhooks
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedWebhookList'
+          description: ''
+    post:
+      operationId: webhooks_create
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      tags:
+      - webhooks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+          description: ''
+  /webhooks/{id}/:
+    get:
+      operationId: webhooks_retrieve
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this webhook.
+        required: true
+      tags:
+      - webhooks
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+          description: ''
+    put:
+      operationId: webhooks_update
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this webhook.
+        required: true
+      tags:
+      - webhooks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Webhook'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+          description: ''
+    patch:
+      operationId: webhooks_partial_update
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this webhook.
+        required: true
+      tags:
+      - webhooks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedWebhook'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedWebhook'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedWebhook'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+          description: ''
+    delete:
+      operationId: webhooks_destroy
+      description: |-
+        Signed POSTs to your URL on post.published, post.failed and
+        channel.broken. The signing secret is shown once, in the create response.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this webhook.
+        required: true
+      tags:
+      - webhooks
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /webhooks/{id}/test/:
+    post:
+      operationId: webhooks_test_create
+      description: Sends a `ping` event now.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this webhook.
+        required: true
+      tags:
+      - webhooks
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '202':
+          description: No response body
   /workspaces/:
     get:
       operationId: workspaces_list
@@ -3859,6 +4251,64 @@ components:
       - supports_oauth
       - supports_scheduling_native
       - supports_threads
+    EventsEnum:
+      enum:
+      - post.published
+      - post.failed
+      - channel.broken
+      type: string
+      description: |-
+        * `post.published` - post.published
+        * `post.failed` - post.failed
+        * `channel.broken` - channel.broken
+    Feed:
+      type: object
+      description: |-
+        Base for every serializer whose rows belong to a workspace:
+        * related-object ids are limited to the request user's workspaces;
+        * every referenced object must belong to the row's own workspace (a post
+          in workspace A can't target workspace B's channel, even when the user
+          is a member of both);
+        * `workspace` (and anything in `immutable_on_update`) can't be changed
+          once the row exists.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        url:
+          type: string
+          format: uri
+          maxLength: 500
+        channels:
+          type: array
+          items:
+            type: integer
+        template:
+          type: string
+          maxLength: 500
+        is_active:
+          type: boolean
+        last_checked_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_error:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - last_checked_at
+      - last_error
+      - url
+      - workspace
     GenerateImageRequest:
       type: object
       properties:
@@ -4327,6 +4777,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Channel'
+    PaginatedFeedList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Feed'
     PaginatedMediaAssetList:
       type: object
       required:
@@ -4603,6 +5076,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VoiceProfile'
+    PaginatedWebhookList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Webhook'
     PaginatedWorkspaceList:
       type: object
       required:
@@ -4786,6 +5282,47 @@ components:
           additionalProperties:
             type: string
           writeOnly: true
+    PatchedFeed:
+      type: object
+      description: |-
+        Base for every serializer whose rows belong to a workspace:
+        * related-object ids are limited to the request user's workspaces;
+        * every referenced object must belong to the row's own workspace (a post
+          in workspace A can't target workspace B's channel, even when the user
+          is a member of both);
+        * `workspace` (and anything in `immutable_on_update`) can't be changed
+          once the row exists.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        url:
+          type: string
+          format: uri
+          maxLength: 500
+        channels:
+          type: array
+          items:
+            type: integer
+        template:
+          type: string
+          maxLength: 500
+        is_active:
+          type: boolean
+        last_checked_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_error:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
     PatchedMediaAsset:
       type: object
       description: |-
@@ -5066,6 +5603,8 @@ components:
           maxLength: 150
         email_notifications:
           type: boolean
+        weekly_digest:
+          type: boolean
     PatchedVoiceProfile:
       type: object
       description: |-
@@ -5094,6 +5633,47 @@ components:
           type: string
           format: date-time
           readOnly: true
+    PatchedWebhook:
+      type: object
+      description: |-
+        Base for every serializer whose rows belong to a workspace:
+        * related-object ids are limited to the request user's workspaces;
+        * every referenced object must belong to the row's own workspace (a post
+          in workspace A can't target workspace B's channel, even when the user
+          is a member of both);
+        * `workspace` (and anything in `immutable_on_update`) can't be changed
+          once the row exists.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        url:
+          type: string
+          format: uri
+          maxLength: 500
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventsEnum'
+        is_active:
+          type: boolean
+        last_status:
+          type: string
+          readOnly: true
+        last_delivered_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        secret:
+          type: string
+          readOnly: true
     PatchedWorkspace:
       type: object
       properties:
@@ -5114,6 +5694,8 @@ components:
           type: string
           maxLength: 64
         approval_workflow_enabled:
+          type: boolean
+        utm_tagging:
           type: boolean
         created_at:
           type: string
@@ -5912,6 +6494,8 @@ components:
           maxLength: 150
         email_notifications:
           type: boolean
+        weekly_digest:
+          type: boolean
       required:
       - email
       - pk
@@ -6012,6 +6596,55 @@ components:
       - name
       - updated_at
       - workspace
+    Webhook:
+      type: object
+      description: |-
+        Base for every serializer whose rows belong to a workspace:
+        * related-object ids are limited to the request user's workspaces;
+        * every referenced object must belong to the row's own workspace (a post
+          in workspace A can't target workspace B's channel, even when the user
+          is a member of both);
+        * `workspace` (and anything in `immutable_on_update`) can't be changed
+          once the row exists.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+        url:
+          type: string
+          format: uri
+          maxLength: 500
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventsEnum'
+        is_active:
+          type: boolean
+        last_status:
+          type: string
+          readOnly: true
+        last_delivered_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        secret:
+          type: string
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - last_delivered_at
+      - last_status
+      - secret
+      - url
+      - workspace
     Workspace:
       type: object
       properties:
@@ -6032,6 +6665,8 @@ components:
           type: string
           maxLength: 64
         approval_workflow_enabled:
+          type: boolean
+        utm_tagging:
           type: boolean
         created_at:
           type: string

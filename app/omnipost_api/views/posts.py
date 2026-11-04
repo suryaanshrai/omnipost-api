@@ -126,6 +126,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         "retry_target": Membership.ROLE_EDITOR,
         # client_reviewer ranks with viewer; approve/request_changes check
         # for it explicitly.
+        "duplicate": Membership.ROLE_CONTRIBUTOR,
         "approve": Membership.ROLE_VIEWER,
         "request_changes": Membership.ROLE_VIEWER,
     }
@@ -148,6 +149,9 @@ class PostViewSet(WorkspaceScopedViewSet):
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
             if statuses:
                 qs = qs.filter(status__in=statuses)
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            qs = qs.filter(base_text__icontains=search)
         scheduled = self.request.query_params.get("scheduled")
         if scheduled in ("due", "upcoming"):
             from django.db.models import Q
@@ -238,6 +242,33 @@ class PostViewSet(WorkspaceScopedViewSet):
         post.scheduled_for = min(resolved)
         post.save(update_fields=["status", "scheduled_for", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
+
+    @extend_schema(request=None, responses=PostSerializer)
+    @action(detail=True, methods=["post"])
+    def duplicate(self, request, pk=None):
+        """A new draft with the same text, media, link and channels."""
+        source = self.get_object()
+        copy = Post.objects.create(
+            workspace=source.workspace,
+            author=request.user,
+            kind=source.kind,
+            base_text=source.base_text,
+            link=source.link,
+            voice_profile=source.voice_profile,
+            status=Post.STATUS_DRAFT,
+        )
+        copy.base_media.set(source.base_media.all())
+        for target in source.targets.all():
+            new_target = PostTarget.objects.create(
+                post=copy, channel=target.channel, format=target.format, text_override=target.text_override
+            )
+            new_target.media.set(target.media.all())
+            for part in target.parts.all():
+                new_part = part.__class__.objects.create(
+                    post_target=new_target, sequence=part.sequence, text=part.text, delay_after_s=part.delay_after_s
+                )
+                new_part.media.set(part.media.all())
+        return Response(PostSerializer(copy).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"], url_path="submit-for-review")

@@ -8,6 +8,7 @@ from .models import (
     AppCredential,
     BlackoutWindow,
     Channel,
+    Feed,
     MediaAsset,
     Membership,
     Organization,
@@ -21,6 +22,7 @@ from .models import (
     RecurrenceRule,
     User,
     VoiceProfile,
+    Webhook,
     Workspace,
 )
 
@@ -156,7 +158,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Workspace
-        fields = ["id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "created_at"]
+        fields = [
+            "id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "utm_tagging", "created_at",
+        ]
         read_only_fields = ["id", "created_at"]
 
     def validate_timezone(self, value):
@@ -703,4 +707,59 @@ class RecurrenceRuleSerializer(WorkspaceScopedSerializer):
     def validate_interval_hours(self, value):
         if value < 1:
             raise serializers.ValidationError("interval_hours must be at least 1.")
+        return value
+
+
+class WebhookSerializer(WorkspaceScopedSerializer):
+    # Generated server-side and returned only in the create response.
+    secret = serializers.CharField(read_only=True)
+    events = serializers.ListField(
+        child=serializers.ChoiceField(choices=Webhook.EVENTS), required=False, allow_empty=True
+    )
+
+    class Meta:
+        model = Webhook
+        fields = [
+            "id", "workspace", "url", "events", "is_active", "last_status", "last_delivered_at", "created_at", "secret",
+        ]
+        read_only_fields = ["id", "last_status", "last_delivered_at", "created_at"]
+
+    def validate_url(self, value):
+        from connectors.netguard import UnsafeURL, assert_public_url
+
+        try:
+            assert_public_url(value, schemes=("https",))
+        except UnsafeURL as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        return value
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self.context.get("show_secret"):
+            data.pop("secret", None)
+        return data
+
+    def create(self, validated_data):
+        import secrets
+
+        validated_data["secret"] = secrets.token_hex(32)
+        return super().create(validated_data)
+
+
+class FeedSerializer(WorkspaceScopedSerializer):
+    class Meta:
+        model = Feed
+        fields = [
+            "id", "workspace", "url", "channels", "template", "is_active",
+            "last_checked_at", "last_error", "created_at",
+        ]
+        read_only_fields = ["id", "last_checked_at", "last_error", "created_at"]
+
+    def validate_url(self, value):
+        from connectors.netguard import UnsafeURL, assert_public_url
+
+        try:
+            assert_public_url(value)
+        except UnsafeURL as exc:
+            raise serializers.ValidationError(str(exc)) from exc
         return value

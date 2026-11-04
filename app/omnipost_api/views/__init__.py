@@ -1,6 +1,7 @@
 """API views, split by area. urls.py imports the view classes from here."""
 
 from .channels import ChannelViewSet, ConnectorsView, OAuthCompleteView, OAuthStartView, ValidateView
+from .integrations import FeedViewSet, WebhookViewSet
 from .library import AppCredentialViewSet, ProviderKeyViewSet, VoiceProfileViewSet
 from .media import MediaAssetViewSet
 from .posts import PostTargetViewSet, PostViewSet, PublishAttemptViewSet
@@ -12,6 +13,7 @@ __all__ = [
     "BlackoutWindowViewSet",
     "ChannelViewSet",
     "ConnectorsView",
+    "FeedViewSet",
     "MediaAssetViewSet",
     "MembershipViewSet",
     "OAuthCompleteView",
@@ -24,5 +26,6 @@ __all__ = [
     "RecurrenceRuleViewSet",
     "ValidateView",
     "VoiceProfileViewSet",
+    "WebhookViewSet",
     "WorkspaceViewSet",
 ]

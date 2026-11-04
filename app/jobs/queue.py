@@ -61,3 +61,8 @@ def enqueue_metrics_poll(post_target_id: int) -> None:
 def enqueue_notification_email(notification_id: int) -> None:
     queue = django_rq.get_queue("default")
     queue.enqueue("jobs.notify.send_notification_email", notification_id)
+
+
+def enqueue_webhook(hook_id: int, payload: dict) -> None:
+    queue = django_rq.get_queue("default")
+    queue.enqueue("jobs.webhooks.deliver", hook_id, payload)

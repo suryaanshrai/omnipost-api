@@ -9,6 +9,9 @@ from django.db import models
 class User(AbstractUser):
     # Email me when a post fails or a channel needs reconnecting.
     email_notifications = models.BooleanField(default=True)
+    # Monday summary of the last week's posts (jobs/digest.py).
+    weekly_digest = models.BooleanField(default=True)
+    last_digest_at = models.DateTimeField(null=True, blank=True)
 
 
 class Organization(models.Model):
@@ -44,6 +47,8 @@ class Workspace(models.Model):
     # with a client_reviewer membership role flip this on to require
     # draft -> in_review -> approved before a post can be scheduled/queued.
     approval_workflow_enabled = models.BooleanField(default=False)
+    # Add utm_source/medium/campaign to a post's link at publish time.
+    utm_tagging = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

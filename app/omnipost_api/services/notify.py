@@ -47,6 +47,9 @@ def notify(
 
 
 def post_failed(post_target) -> None:
+    from jobs.webhooks import emit
+
+    emit(post_target.post.workspace_id, "post.failed", _target_payload(post_target))
     post = post_target.post
     channel = post_target.channel
     detail = post_target.attempts.order_by("-created_at").values_list("error_detail", flat=True).first() or ""
@@ -62,6 +65,13 @@ def post_failed(post_target) -> None:
 
 
 def channel_broken(channel) -> None:
+    from jobs.webhooks import emit
+
+    emit(
+        channel.workspace_id,
+        "channel.broken",
+        {"channel": channel.pk, "connector": channel.connector_slug, "name": channel.display_name},
+    )
     notify(
         channel.workspace,
         Notification.KIND_CHANNEL_BROKEN,
@@ -81,3 +91,21 @@ def preflight_failed(post_target) -> None:
         link=f"/app/connections/{channel.pk}",
         post=post_target.post,
     )
+
+
+def _target_payload(post_target) -> dict:
+    return {
+        "post": post_target.post_id,
+        "target": post_target.pk,
+        "channel": post_target.channel_id,
+        "connector": post_target.channel.connector_slug,
+        "status": post_target.status,
+        "permalink": post_target.permalink,
+        "text": post_target.post.base_text,
+    }
+
+
+def post_published(post_target) -> None:
+    from jobs.webhooks import emit
+
+    emit(post_target.post.workspace_id, "post.published", _target_payload(post_target))

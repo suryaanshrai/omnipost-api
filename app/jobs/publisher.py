@@ -199,6 +199,7 @@ def _mark_succeeded(attempt: PublishAttempt, post_target: PostTarget, outcome):
     post_target.save(update_fields=["status", "remote_id", "permalink", "published_at", "updated_at"])
 
     _recompute_post_status(post_target.post_id)
+    notify.post_published(post_target)
 
     if post_target.remote_id:
         return lambda: job_queue.enqueue_metrics_poll(post_target.pk)

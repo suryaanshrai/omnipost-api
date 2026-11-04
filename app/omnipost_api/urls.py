@@ -18,6 +18,8 @@ router.register("queue-slots", views.QueueSlotViewSet, basename="queue-slot")
 router.register("blackout-windows", views.BlackoutWindowViewSet, basename="blackout-window")
 router.register("recurrence-rules", views.RecurrenceRuleViewSet, basename="recurrence-rule")
 router.register("notifications", views_account.NotificationViewSet, basename="notification")
+router.register("webhooks", views.WebhookViewSet, basename="webhook")
+router.register("feeds", views.FeedViewSet, basename="feed")
 
 app_name = "omnipost_api"
 
