@@ -21,8 +21,21 @@ def enqueue_attempt_at(attempt_id: int, run_at: datetime) -> None:
 
 
 def enqueue_attempt_now(attempt_id: int) -> None:
+    """Used by the reconciler to recover a due attempt. The fixed job id
+    means a recovery job that's still waiting for a worker isn't enqueued
+    again on every sweep."""
+    from rq.exceptions import NoSuchJobError
+    from rq.job import Job, JobStatus
+
     queue = django_rq.get_queue("publish")
-    queue.enqueue("jobs.publisher.run_publish_attempt", attempt_id)
+    job_id = f"recover-attempt-{attempt_id}"
+    try:
+        existing = Job.fetch(job_id, connection=queue.connection)
+        if existing.get_status() in (JobStatus.QUEUED, JobStatus.STARTED, JobStatus.SCHEDULED, JobStatus.DEFERRED):
+            return
+    except NoSuchJobError:
+        pass
+    queue.enqueue("jobs.publisher.run_publish_attempt", attempt_id, job_id=job_id)
 
 
 def enqueue_preflight_at(post_target_id: int, run_at: datetime) -> None:

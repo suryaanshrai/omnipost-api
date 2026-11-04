@@ -123,6 +123,9 @@ class OAuthAuthorization:
 
 
 class Connector(ABC):
+    # True only for connectors whose refresh() really gets a new token.
+    # Drives jobs.health's "refresh once after a 401" path.
+    refreshes_tokens: bool = False
     """One platform integration. Subclass this directly for platforms with
     real state machines (media processing, chunked upload); use
     DeclarativeConnector for simple single-request REST platforms."""

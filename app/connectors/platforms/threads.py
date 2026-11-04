@@ -56,6 +56,7 @@ def _app_secret() -> str:
 
 
 class ThreadsConnector(Connector):
+    refreshes_tokens = True
     slug = "threads"
     capabilities = Capabilities(
         slug="threads",

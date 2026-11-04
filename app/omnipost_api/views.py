@@ -784,10 +784,14 @@ class PostViewSet(WorkspaceScopedViewSet):
     @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
+        """Cancels every target that hasn't started publishing. Bumping the
+        epoch makes any queued attempt a no-op when a worker reaches it."""
+        from django.db.models import F
+
         post = self.get_object()
-        post.targets.filter(
-            status__in=[PostTarget.STATUS_PENDING, PostTarget.STATUS_SCHEDULED]
-        ).update(status=PostTarget.STATUS_CANCELED)
+        post.targets.filter(status__in=[PostTarget.STATUS_PENDING, PostTarget.STATUS_SCHEDULED]).update(
+            status=PostTarget.STATUS_CANCELED, epoch=F("epoch") + 1
+        )
         post.status = Post.STATUS_CANCELED
         post.save(update_fields=["status", "updated_at"])
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)

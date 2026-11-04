@@ -7,10 +7,12 @@ from __future__ import annotations
 MAX_RETRIES = 5
 BASE_DELAY_S = 30
 MAX_DELAY_S = 3600
+# Upper bound on a platform-supplied wait (Retry-After, rate-limit reset).
+MAX_RETRY_AFTER_S = 6 * 3600
 DEFAULT_POLL_DELAY_S = 5  # for non-error "still processing, check back" outcomes
 
 
 def backoff_seconds(attempt_number: int, retry_after: float | None = None) -> float:
     if retry_after is not None:
-        return max(retry_after, 1.0)
+        return min(max(retry_after, 1.0), MAX_RETRY_AFTER_S)
     return min(BASE_DELAY_S * (2 ** (attempt_number - 1)), MAX_DELAY_S)

@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -56,6 +57,7 @@ _MEDIA_CATEGORY = {"image": "tweet_image", "gif": "tweet_gif", "video": "tweet_v
 
 
 class XConnector(Connector):
+    refreshes_tokens = True
     slug = "x"
     requires_own_app = True
     capabilities = Capabilities(
@@ -353,12 +355,13 @@ class XConnector(Connector):
         if response.status_code == 401:
             raise AuthExpired("X rejected this channel's credentials.", raw_detail=response.text[:500])
         if response.status_code == 429:
+            # x-rate-limit-reset is a Unix timestamp, not a number of seconds.
             header = response.headers.get("x-rate-limit-reset")
-            raise RateLimited(
-                f"X rate-limited {action}.",
-                raw_detail=response.text[:500],
-                retry_after=float(header) if header else 60.0,
-            )
+            try:
+                retry_after = max(float(header) - time.time(), 1.0) if header else 60.0
+            except ValueError:
+                retry_after = 60.0
+            raise RateLimited(f"X rate-limited {action}.", raw_detail=response.text[:500], retry_after=retry_after)
         if response.status_code in (400, 403, 422):
             raise InvalidMedia(f"X rejected the request while {action}.", raw_detail=response.text[:500])
         raise TransientError(f"X returned {response.status_code} while {action}.", raw_detail=response.text[:500])

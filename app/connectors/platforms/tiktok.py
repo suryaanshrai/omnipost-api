@@ -59,6 +59,7 @@ def _client_secret() -> str:
 
 
 class TikTokConnector(Connector):
+    refreshes_tokens = True
     slug = "tiktok"
     capabilities = Capabilities(
         slug="tiktok",
