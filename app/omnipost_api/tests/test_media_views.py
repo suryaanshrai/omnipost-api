@@ -70,7 +70,7 @@ def test_presign_returns_501_when_s3_not_configured(db, django_user_model):
 
 
 def test_presign_returns_upload_fields_when_s3_enabled(db, django_user_model, monkeypatch):
-    from omnipost_api import views as views_module
+    from omnipost_api.views import media as views_module
 
     user = django_user_model.objects.create_user(username="yara", password="x")
     workspace = user.memberships.get().workspace
@@ -92,7 +92,7 @@ def test_presign_returns_upload_fields_when_s3_enabled(db, django_user_model, mo
     class FakeStorage:
         connection = FakeConnection()
 
-    monkeypatch.setattr(views_module, "default_storage", FakeStorage())
+    monkeypatch.setattr("omnipost_api.views.media.default_storage", FakeStorage())
 
     response = client.post(
         "/media/presign/",
@@ -119,7 +119,7 @@ def test_confirm_from_key_requires_s3_enabled(db, django_user_model):
 
 
 def test_confirm_from_key_creates_asset_pointing_at_existing_object(db, django_user_model, monkeypatch):
-    from omnipost_api import views as views_module
+    from omnipost_api.views import media as views_module
 
     user = django_user_model.objects.create_user(username="asha", password="x")
     workspace = user.memberships.get().workspace
@@ -142,7 +142,7 @@ def test_confirm_from_key_creates_asset_pointing_at_existing_object(db, django_u
 
 
 def test_confirm_rejects_key_outside_this_workspace(db, django_user_model, monkeypatch):
-    from omnipost_api import views as views_module
+    from omnipost_api.views import media as views_module
 
     user = django_user_model.objects.create_user(username="asha2", password="x")
     workspace = user.memberships.get().workspace
