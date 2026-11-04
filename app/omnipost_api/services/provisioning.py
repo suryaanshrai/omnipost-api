@@ -26,7 +26,7 @@ def unique_workspace_slug(base: str, fallback: str = "workspace") -> str:
 
 
 def create_personal_workspace(user) -> Workspace:
-    org = Organization.objects.create(name=f"{user.username}'s workspace", plan=Organization.PLAN_FREE)
+    org = Organization.objects.create(name=f"{user.username}'s workspace")
     slug = unique_workspace_slug(user.username, fallback=f"user-{user.pk}")
     workspace = Workspace.objects.create(organization=org, name=org.name, slug=slug)
     Membership.objects.create(workspace=workspace, user=user, role=Membership.ROLE_OWNER)

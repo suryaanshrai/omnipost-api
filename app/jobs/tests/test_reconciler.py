@@ -21,7 +21,7 @@ def test_recovers_orphaned_scheduled_target_with_no_attempt(post_target, enqueue
 
 
 def test_does_not_touch_targets_with_a_live_attempt(post_target, enqueued):
-    attempt = schedule_post_target(post_target, run_at=timezone.now() - timedelta(minutes=1))
+    attempt = schedule_post_target(post_target, run_at=timezone.now() - timedelta(minutes=5))
 
     result = reconcile_once()
 
@@ -49,7 +49,7 @@ def test_requeues_a_due_waiting_attempt(post_target, enqueued):
         epoch=1,
         attempt_number=1,
         status=PublishAttempt.STATUS_WAITING,
-        run_at=timezone.now() - timedelta(seconds=5),
+        run_at=timezone.now() - timedelta(minutes=5),
     )
     result = reconcile_once()
     assert result["requeued_attempts"] == 1

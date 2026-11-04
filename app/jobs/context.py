@@ -29,6 +29,17 @@ def media_ref(asset: MediaAsset) -> MediaRef:
     )
 
 
+def _link_for(post_target: PostTarget) -> str | None:
+    link = post_target.post.link
+    if not link:
+        return None
+    if post_target.post.workspace.utm_tagging:
+        from .utm import tag
+
+        return tag(link, source=post_target.channel.connector_slug)
+    return link
+
+
 def build_context(post_target: PostTarget) -> PublishContext:
     channel = post_target.channel
     credentials = ChannelCredentials(values=channel.get_credentials(), external_account_id=channel.external_account_id)
@@ -46,6 +57,6 @@ def build_context(post_target: PostTarget) -> PublishContext:
         post_kind=post_target.effective_format(),
         credentials=credentials,
         idempotency_key=post_target.idempotency_key(),
-        link=post_target.post.link or None,
+        link=_link_for(post_target),
         parts=parts or None,
     )

@@ -172,3 +172,42 @@ def test_calendar_entries_carry_their_posts_kind_text_and_status(dana):
     assert entry["post_kind"] == "text"
     assert entry["post_text"] == "Launch day"
     assert entry["post_status"] == "scheduled"
+
+
+def test_scheduled_filter_splits_due_from_upcoming(db, django_user_model):
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from rest_framework.test import APIClient
+
+    from omnipost_api.models import Post
+
+    user = django_user_model.objects.create_user(username="sched", password="x")
+    ws = user.memberships.get().workspace
+    past = Post.objects.create(
+        workspace=ws, kind="text", status="scheduled", scheduled_for=timezone.now() - timedelta(hours=1)
+    )
+    future = Post.objects.create(
+        workspace=ws, kind="text", status="scheduled", scheduled_for=timezone.now() + timedelta(hours=1)
+    )
+    draft = Post.objects.create(workspace=ws, kind="text", status="draft")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    def ids(q):
+        return {p["id"] for p in client.get(f"/posts/?workspace={ws.pk}&{q}").data["results"]}
+
+    assert ids("scheduled=due") == {past.pk, draft.pk}
+    assert ids("scheduled=upcoming") == {future.pk, draft.pk}
+
+
+def test_bad_inputs_are_400s_not_500s(db, django_user_model):
+    from rest_framework.test import APIClient
+
+    user = django_user_model.objects.create_user(username="bad", password="x")
+    ws = user.memberships.get().workspace
+    client = APIClient()
+    client.force_authenticate(user)
+    assert client.get(f"/posts/calendar/?workspace={ws.pk}&start=nope&end=2030-01-01").status_code == 400
+    assert client.get(f"/posts/calendar/?workspace={ws.pk}&start=2030-01-01&end=2031-01-01").status_code == 400
+    assert client.patch(f"/workspaces/{ws.pk}/", {"timezone": "Mars/Base"}, format="json").status_code == 400

@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import (
     AppCredential,
@@ -14,6 +15,7 @@ from .models import (
     PostMetric,
     PostTarget,
     PostTargetPart,
+    PricingInterest,
     ProviderKey,
     PublishAttempt,
     QueueSlot,
@@ -26,7 +28,9 @@ from .models import (
 
 
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(DjangoUserAdmin):
+    # Django's UserAdmin hashes passwords via its own form; a plain
+    # ModelAdmin stored whatever was typed into the hash field.
     list_display = ("username", "is_superuser", "first_name", "last_name", "email", "is_active", "date_joined")
     list_filter = ("last_login", "is_superuser", "is_staff", "is_active", "date_joined")
     raw_id_fields = ("groups", "user_permissions")
@@ -34,8 +38,7 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "plan", "created_at")
-    list_filter = ("plan",)
+    list_display = ("id", "name", "created_at")
 
 
 @admin.register(Workspace)
@@ -165,3 +168,9 @@ class BlackoutWindowAdmin(admin.ModelAdmin):
 class RecurrenceRuleAdmin(admin.ModelAdmin):
     list_display = ("id", "channel", "interval_hours", "next_run_at", "is_active")
     list_filter = ("is_active", "channel")
+
+
+@admin.register(PricingInterest)
+class PricingInterestAdmin(admin.ModelAdmin):
+    list_display = ("email", "plan", "created_at")
+    list_filter = ("plan",)

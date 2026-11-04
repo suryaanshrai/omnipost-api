@@ -17,6 +17,7 @@ video path needs the poll — LinkedIn processes images synchronously.
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -29,6 +30,7 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -67,7 +69,7 @@ class LinkedInConnector(Connector):
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "state": state,
-            "scope": _SCOPES,
+            "scope": extra_scopes(_SCOPES, "LINKEDIN_EXTRA_SCOPES"),
         }
         query = "&".join(f"{k}={quote(v)}" for k, v in params.items())
         return OAuthAuthorization(authorize_url=f"{_AUTHORIZE_URL}?{query}", state=state)
@@ -250,3 +252,23 @@ class LinkedInConnector(Connector):
         raise TransientError(
             f"LinkedIn returned {response.status_code} while {action}.", raw_detail=response.text[:500]
         )
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        """Likes and comments on our post. Needs r_member_social, which
+        LinkedIn grants only to approved apps (LINKEDIN_EXTRA_SCOPES)."""
+        response = requests.get(
+            f"{_API_BASE}/rest/socialActions/{quote(remote_id, safe='')}",
+            headers=self._headers(credentials["ACCESS_TOKEN"]),
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("LinkedIn rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        body = response.json()
+        return {
+            "likes": (body.get("likesSummary") or {}).get("totalLikes"),
+            "comments": (body.get("commentsSummary") or {}).get("aggregatedTotalComments"),
+            "shares": None,
+            "impressions": None,
+        }

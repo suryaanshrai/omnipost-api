@@ -78,7 +78,7 @@ def test_exchange_code_rejects_state_signed_with_different_salt():
 
 
 @responses.activate
-def test_mastodon_connector_still_publishes_via_declarative_spec():
+def test_mastodon_connector_publishes_a_single_status():
     responses.add(
         responses.POST,
         "https://mastodon.social/api/v1/statuses",

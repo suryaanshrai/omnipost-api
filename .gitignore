@@ -12,3 +12,7 @@ worker_logs
 *.log
 staticfiles/
 mediafiles/
+
+# Local Redis snapshot
+dump.rdb
+.env.live

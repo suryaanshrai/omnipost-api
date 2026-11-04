@@ -18,6 +18,7 @@ for this product) — THREADS_APP_ID / THREADS_APP_SECRET in the environment.
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -30,6 +31,8 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
@@ -55,6 +58,8 @@ def _app_secret() -> str:
 
 
 class ThreadsConnector(Connector):
+    server_app_env = ("THREADS_APP_ID", "THREADS_APP_SECRET")
+    refreshes_tokens = True
     slug = "threads"
     capabilities = Capabilities(
         slug="threads",
@@ -74,7 +79,7 @@ class ThreadsConnector(Connector):
         params = {
             "client_id": _app_id(),
             "redirect_uri": redirect_uri,
-            "scope": _SCOPES,
+            "scope": extra_scopes(_SCOPES, "THREADS_EXTRA_SCOPES", ","),
             "response_type": "code",
             "state": state,
         }
@@ -106,10 +111,15 @@ class ThreadsConnector(Connector):
             },
             timeout=15,
         )
-        access_token = long_lived.json()["access_token"] if long_lived.ok else short["access_token"]
+        token_data = long_lived.json() if long_lived.ok else short
+        access_token = token_data["access_token"]
 
         return ChannelCredentials(
-            values={"ACCESS_TOKEN": access_token, "THREADS_USER_ID": str(short["user_id"])},
+            values={
+                "ACCESS_TOKEN": access_token,
+                "THREADS_USER_ID": str(short["user_id"]),
+                **expiry_values(token_data),
+            },
             external_account_id=str(short["user_id"]),
         )
 
@@ -121,8 +131,9 @@ class ThreadsConnector(Connector):
         )
         if not response.ok:
             raise AuthExpired("Threads rejected this channel's refresh attempt.", raw_detail=response.text[:500])
+        token_data = response.json()
         return ChannelCredentials(
-            values={**credentials.values, "ACCESS_TOKEN": response.json()["access_token"]},
+            values={**credentials.values, "ACCESS_TOKEN": token_data["access_token"], **expiry_values(token_data)},
             external_account_id=credentials.external_account_id,
         )
 
@@ -225,9 +236,39 @@ class ThreadsConnector(Connector):
         media_id = response.json()["id"]
         return PublishOutcome(done=True, remote_id=media_id, permalink=f"https://www.threads.net/post/{media_id}")
 
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        user_id = credentials["THREADS_USER_ID"]
+        token = credentials["ACCESS_TOKEN"]
+        creation_id = self._create_container(user_id, token, text=text, media=[], reply_to_id=remote_id)
+        return self._publish_container(user_id, token, creation_id).remote_id
+
     def _raise_error(self, response: requests.Response, *, action: str) -> None:
         if response.status_code == 401:
             raise AuthExpired("Threads rejected this channel's credentials.", raw_detail=response.text[:500])
         if response.status_code == 429:
             raise RateLimited(f"Threads rate-limited {action}.", raw_detail=response.text[:500], retry_after=60)
         raise TransientError(f"Threads returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        """Needs the threads_manage_insights permission (THREADS_EXTRA_SCOPES)."""
+        response = requests.get(
+            f"{_GRAPH_BASE}/{remote_id}/insights",
+            params={"metric": "views,likes,replies,reposts,quotes", "access_token": credentials["ACCESS_TOKEN"]},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("Threads rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        values = {
+            row.get("name"): (row.get("values") or [{}])[0].get("value") for row in response.json().get("data", [])
+        }
+        if not values:
+            return {}
+        return {
+            "likes": values.get("likes"),
+            "comments": values.get("replies"),
+            "shares": (values.get("reposts") or 0) + (values.get("quotes") or 0),
+            "impressions": values.get("views"),
+            **values,
+        }
