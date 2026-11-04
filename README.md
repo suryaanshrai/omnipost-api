@@ -95,6 +95,23 @@ Organization ─┬─ Workspace ─┬─ Membership (user + role)
   (`omnipost_api/crypto.py`). Back that key up: without it, connected
   accounts can't be decrypted.
 
+## Signing in from scripts
+
+Make a personal API token in the app (Settings → API tokens) or with
+`POST /account/tokens/ {"name": "...", "read_only": false, "expires_in_days": 90}`,
+then send `Authorization: Bearer op_...`. A token acts with your
+permissions (read-only tokens can only GET). It can't make or revoke
+tokens, change your password or delete the account.
+
+The web app signs in with an httpOnly cookie instead of keeping the token
+in localStorage. It sends `X-OmniPost-Client` with every request; the
+cookie is ignored without it, which keeps other sites from using it. If
+the app and API are on different sites (not just subdomains), set
+`AUTH_COOKIE_SAMESITE=None` (needs HTTPS).
+
+`mcp_server/` is an MCP server built on this: see its README to post from
+Claude or any MCP client.
+
 ## Permissions
 
 Every row belongs to a workspace, and every request is scoped to the

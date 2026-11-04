@@ -6,4 +6,4 @@ class OmnipostApiConfig(AppConfig):
     name = 'omnipost_api'
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from . import schema_auth, signals  # noqa: F401

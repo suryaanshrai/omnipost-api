@@ -20,6 +20,7 @@ router.register("recurrence-rules", views.RecurrenceRuleViewSet, basename="recur
 router.register("notifications", views_account.NotificationViewSet, basename="notification")
 router.register("webhooks", views.WebhookViewSet, basename="webhook")
 router.register("feeds", views.FeedViewSet, basename="feed")
+router.register("account/tokens", auth.ApiTokenViewSet, basename="api-token")
 
 app_name = "omnipost_api"
 
@@ -44,6 +45,9 @@ urlpatterns = [
         name="rest_password_reset_confirm",
     ),
     path("auth/registration/", auth.ThrottledRegisterView.as_view(), name="rest_register"),
+    path("auth/logout/", auth.CookieLogoutView.as_view(), name="rest_logout"),
+    path("auth/password/change/", auth.GuardedPasswordChangeView.as_view(), name="rest_password_change"),
+    path("auth/cookie/", auth.CookieSessionView.as_view(), name="auth-cookie"),
     path("auth/", include("dj_rest_auth.urls")),
     path("account/export/", views_account.AccountExportView.as_view(), name="account-export"),
     path("account/delete/", views_account.AccountDeleteView.as_view(), name="account-delete"),

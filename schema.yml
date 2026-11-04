@@ -26,6 +26,8 @@ paths:
               $ref: '#/components/schemas/AccountDelete'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -40,6 +42,8 @@ paths:
       tags:
       - account
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -49,6 +53,82 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountExport'
           description: ''
+  /account/tokens/:
+    get:
+      operationId: account_tokens_list
+      description: |-
+        Personal API tokens: `Authorization: Bearer <key>` on any endpoint, with
+        your permissions (or read-only). The key is returned once, on create.
+      tags:
+      - account
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiToken'
+          description: ''
+    post:
+      operationId: account_tokens_create
+      description: |-
+        Personal API tokens: `Authorization: Bearer <key>` on any endpoint, with
+        your permissions (or read-only). The key is returned once, on create.
+      tags:
+      - account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiToken'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApiToken'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ApiToken'
+        required: true
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedApiToken'
+          description: ''
+  /account/tokens/{id}/:
+    delete:
+      operationId: account_tokens_destroy
+      description: |-
+        Personal API tokens: `Authorization: Bearer <key>` on any endpoint, with
+        your permissions (or read-only). The key is returned once, on create.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this api token.
+        required: true
+      tags:
+      - account
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /ai/alt-text/:
     post:
       operationId: ai_alt_text_create
@@ -70,6 +150,8 @@ paths:
               $ref: '#/components/schemas/AltTextRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -98,6 +180,8 @@ paths:
               $ref: '#/components/schemas/GenerateImageRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -128,6 +212,8 @@ paths:
               $ref: '#/components/schemas/RepurposeRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -150,6 +236,8 @@ paths:
       tags:
       - ai
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -182,6 +270,8 @@ paths:
               $ref: '#/components/schemas/GenerateVariantsRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -220,6 +310,8 @@ paths:
       tags:
       - app-credentials
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -251,6 +343,8 @@ paths:
               $ref: '#/components/schemas/AppCredential'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -278,6 +372,8 @@ paths:
       tags:
       - app-credentials
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -316,6 +412,8 @@ paths:
               $ref: '#/components/schemas/AppCredential'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -353,6 +451,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedAppCredential'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -379,11 +479,34 @@ paths:
       tags:
       - app-credentials
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
         '204':
           description: No response body
+  /auth/cookie/:
+    post:
+      operationId: auth_cookie_create
+      description: |-
+        POST, signed in with a session token in the Authorization header ->
+        the same session as an httpOnly cookie. Lets the web app move an older
+        sign-in out of localStorage without asking for the password again.
+      tags:
+      - auth
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
   /auth/login/:
     post:
       operationId: auth_login_create
@@ -410,6 +533,8 @@ paths:
               $ref: '#/components/schemas/Login'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -421,16 +546,38 @@ paths:
                 $ref: '#/components/schemas/Token'
           description: ''
   /auth/logout/:
-    post:
-      operationId: auth_logout_create
+    get:
+      operationId: auth_logout_retrieve
       description: |-
-        Calls Django logout method and delete the Token object
-        assigned to the current User object.
-
-        Accepts/Returns nothing.
+        Signs out: deletes the session token and clears the cookie. With an
+        API token it refuses, so a script can't sign you out of the web app;
+        revoke the token instead.
       tags:
       - auth
       security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestAuthDetail'
+          description: ''
+    post:
+      operationId: auth_logout_create
+      description: |-
+        Signs out: deletes the session token and clears the cookie. With an
+        API token it refuses, so a script can't sign you out of the web app;
+        revoke the token instead.
+      tags:
+      - auth
+      security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -464,6 +611,8 @@ paths:
               $ref: '#/components/schemas/PasswordChange'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -496,6 +645,8 @@ paths:
               $ref: '#/components/schemas/PasswordReset'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -531,6 +682,8 @@ paths:
               $ref: '#/components/schemas/PasswordResetConfirm'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -563,6 +716,8 @@ paths:
               $ref: '#/components/schemas/Register'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -595,6 +750,8 @@ paths:
               $ref: '#/components/schemas/ResendEmailVerification'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -627,6 +784,8 @@ paths:
               $ref: '#/components/schemas/VerifyEmail'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       - {}
@@ -652,6 +811,8 @@ paths:
       tags:
       - auth
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -687,6 +848,8 @@ paths:
               $ref: '#/components/schemas/UserDetails'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -721,6 +884,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedUserDetails'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -759,6 +924,8 @@ paths:
       tags:
       - blackout-windows
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -790,6 +957,8 @@ paths:
               $ref: '#/components/schemas/BlackoutWindow'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -817,6 +986,8 @@ paths:
       tags:
       - blackout-windows
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -855,6 +1026,8 @@ paths:
               $ref: '#/components/schemas/BlackoutWindow'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -892,6 +1065,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedBlackoutWindow'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -918,6 +1093,8 @@ paths:
       tags:
       - blackout-windows
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -952,6 +1129,8 @@ paths:
       tags:
       - channels
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -983,6 +1162,8 @@ paths:
               $ref: '#/components/schemas/Channel'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1010,6 +1191,8 @@ paths:
       tags:
       - channels
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1048,6 +1231,8 @@ paths:
               $ref: '#/components/schemas/Channel'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1085,6 +1270,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedChannel'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1111,6 +1298,8 @@ paths:
       tags:
       - channels
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1145,6 +1334,8 @@ paths:
       tags:
       - channels
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1168,6 +1359,8 @@ paths:
       tags:
       - connectors
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1204,6 +1397,8 @@ paths:
       tags:
       - feeds
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1231,6 +1426,8 @@ paths:
               $ref: '#/components/schemas/Feed'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1254,6 +1451,8 @@ paths:
       tags:
       - feeds
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1288,6 +1487,8 @@ paths:
               $ref: '#/components/schemas/Feed'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1321,6 +1522,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedFeed'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1343,6 +1546,8 @@ paths:
       tags:
       - feeds
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1381,6 +1586,8 @@ paths:
       tags:
       - media
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1416,6 +1623,8 @@ paths:
               $ref: '#/components/schemas/MediaAsset'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1447,6 +1656,8 @@ paths:
       tags:
       - media
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1489,6 +1700,8 @@ paths:
               $ref: '#/components/schemas/MediaAsset'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1530,6 +1743,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedMediaAsset'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1560,6 +1775,8 @@ paths:
       tags:
       - media
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1587,6 +1804,8 @@ paths:
               $ref: '#/components/schemas/MediaAsset'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1624,6 +1843,8 @@ paths:
       tags:
       - memberships
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1654,6 +1875,8 @@ paths:
               $ref: '#/components/schemas/Membership'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1680,6 +1903,8 @@ paths:
       tags:
       - memberships
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1717,6 +1942,8 @@ paths:
               $ref: '#/components/schemas/Membership'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1753,6 +1980,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedMembership'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1778,6 +2007,8 @@ paths:
       tags:
       - memberships
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1807,6 +2038,8 @@ paths:
       tags:
       - notifications
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1833,6 +2066,8 @@ paths:
       tags:
       - notifications
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1854,6 +2089,8 @@ paths:
       tags:
       - notifications
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1875,6 +2112,8 @@ paths:
       tags:
       - notifications
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1902,6 +2141,8 @@ paths:
               $ref: '#/components/schemas/OAuthCompleteRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1934,6 +2175,8 @@ paths:
               $ref: '#/components/schemas/OAuthStartRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -1977,6 +2220,8 @@ paths:
       tags:
       - post-targets
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2004,6 +2249,8 @@ paths:
       tags:
       - post-targets
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2043,6 +2290,8 @@ paths:
       tags:
       - post-targets
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2095,6 +2344,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2126,6 +2377,8 @@ paths:
               $ref: '#/components/schemas/Post'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2153,6 +2406,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2191,6 +2446,8 @@ paths:
               $ref: '#/components/schemas/Post'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2228,6 +2485,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedPost'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2254,6 +2513,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2277,6 +2538,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2302,6 +2565,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2325,6 +2590,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2364,6 +2631,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2390,6 +2659,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2427,6 +2698,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RepostRequest'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2450,6 +2723,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2480,6 +2755,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2518,6 +2795,8 @@ paths:
             schema:
               $ref: '#/components/schemas/ScheduleRequest'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2545,6 +2824,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2595,6 +2876,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2628,6 +2911,8 @@ paths:
               $ref: '#/components/schemas/ImportCsvRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2659,6 +2944,8 @@ paths:
       tags:
       - posts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2697,6 +2984,8 @@ paths:
       tags:
       - provider-keys
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2728,6 +3017,8 @@ paths:
               $ref: '#/components/schemas/ProviderKey'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2755,6 +3046,8 @@ paths:
       tags:
       - provider-keys
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2793,6 +3086,8 @@ paths:
               $ref: '#/components/schemas/ProviderKey'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2830,6 +3125,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedProviderKey'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2856,6 +3153,8 @@ paths:
       tags:
       - provider-keys
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2919,6 +3218,8 @@ paths:
       tags:
       - publish-attempts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2946,6 +3247,8 @@ paths:
       tags:
       - publish-attempts
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -2989,6 +3292,8 @@ paths:
       tags:
       - queue-slots
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3020,6 +3325,8 @@ paths:
               $ref: '#/components/schemas/QueueSlot'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3047,6 +3354,8 @@ paths:
       tags:
       - queue-slots
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3085,6 +3394,8 @@ paths:
               $ref: '#/components/schemas/QueueSlot'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3122,6 +3433,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedQueueSlot'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3148,6 +3461,8 @@ paths:
       tags:
       - queue-slots
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3182,6 +3497,8 @@ paths:
       tags:
       - recurrence-rules
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3213,6 +3530,8 @@ paths:
               $ref: '#/components/schemas/RecurrenceRule'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3240,6 +3559,8 @@ paths:
       tags:
       - recurrence-rules
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3278,6 +3599,8 @@ paths:
               $ref: '#/components/schemas/RecurrenceRule'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3315,6 +3638,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedRecurrenceRule'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3341,6 +3666,8 @@ paths:
       tags:
       - recurrence-rules
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3370,6 +3697,8 @@ paths:
               $ref: '#/components/schemas/ValidateRequest'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3408,6 +3737,8 @@ paths:
       tags:
       - voice-profiles
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3439,6 +3770,8 @@ paths:
               $ref: '#/components/schemas/VoiceProfile'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3466,6 +3799,8 @@ paths:
       tags:
       - voice-profiles
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3504,6 +3839,8 @@ paths:
               $ref: '#/components/schemas/VoiceProfile'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3541,6 +3878,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedVoiceProfile'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3567,6 +3906,8 @@ paths:
       tags:
       - voice-profiles
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3599,6 +3940,8 @@ paths:
       tags:
       - webhooks
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3628,6 +3971,8 @@ paths:
               $ref: '#/components/schemas/Webhook'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3653,6 +3998,8 @@ paths:
       tags:
       - webhooks
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3689,6 +4036,8 @@ paths:
               $ref: '#/components/schemas/Webhook'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3724,6 +4073,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedWebhook'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3748,6 +4099,8 @@ paths:
       tags:
       - webhooks
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3767,6 +4120,8 @@ paths:
       tags:
       - webhooks
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3791,6 +4146,8 @@ paths:
       tags:
       - workspaces
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3817,6 +4174,8 @@ paths:
               $ref: '#/components/schemas/Workspace'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3839,6 +4198,8 @@ paths:
       tags:
       - workspaces
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3872,6 +4233,8 @@ paths:
               $ref: '#/components/schemas/Workspace'
         required: true
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3904,6 +4267,8 @@ paths:
             schema:
               $ref: '#/components/schemas/PatchedWorkspace'
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -3925,6 +4290,8 @@ paths:
       tags:
       - workspaces
       security:
+      - apiToken: []
+      - omnipostCookie: []
       - tokenAuth: []
       - cookieAuth: []
       responses:
@@ -4016,6 +4383,47 @@ components:
           type: string
       required:
       - alt_text
+    ApiToken:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        prefix:
+          type: string
+          readOnly: true
+        read_only:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        expires_in_days:
+          type: integer
+          maximum: 3650
+          minimum: 1
+          writeOnly: true
+          nullable: true
+      required:
+      - created_at
+      - expires_at
+      - id
+      - last_used_at
+      - name
+      - prefix
     AppCredential:
       type: object
       description: |-
@@ -4374,6 +4782,52 @@ components:
       - supports_oauth
       - supports_scheduling_native
       - supports_threads
+    CreatedApiToken:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        prefix:
+          type: string
+          readOnly: true
+        read_only:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        expires_in_days:
+          type: integer
+          maximum: 3650
+          minimum: 1
+          writeOnly: true
+          nullable: true
+        key:
+          type: string
+          readOnly: true
+          description: Shown only in this response.
+      required:
+      - created_at
+      - expires_at
+      - id
+      - key
+      - last_used_at
+      - name
+      - prefix
     EventsEnum:
       enum:
       - post.published
@@ -6854,10 +7308,19 @@ components:
       - name
       - organization
   securitySchemes:
+    apiToken:
+      type: http
+      scheme: bearer
+      description: A personal API token (op_...), from Settings -> API tokens.
     cookieAuth:
       type: apiKey
       in: cookie
       name: sessionid
+    omnipostCookie:
+      type: apiKey
+      in: cookie
+      name: omnipost_auth
+      description: The web app's sign-in cookie. Requests must also send X-OmniPost-Client.
     tokenAuth:
       type: apiKey
       in: header

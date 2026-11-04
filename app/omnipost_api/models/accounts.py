@@ -86,3 +86,25 @@ class Membership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} @ {self.workspace} ({self.role})"
+
+
+class ApiToken(models.Model):
+    """A personal access token for scripts, Zapier/n8n and the MCP server.
+    Only a hash is stored: the key is shown once, when it's made. Keys look
+    like `op_<prefix>_<secret>`; the prefix finds the row, the hash proves it."""
+
+    user = models.ForeignKey("omnipost_api.User", on_delete=models.CASCADE, related_name="api_tokens")
+    name = models.CharField(max_length=100)
+    prefix = models.CharField(max_length=12, unique=True)
+    key_hash = models.CharField(max_length=64)
+    # Read-only tokens can GET but not create, change or publish anything.
+    read_only = models.BooleanField(default=False)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.prefix})"

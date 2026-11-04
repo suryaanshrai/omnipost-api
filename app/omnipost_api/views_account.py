@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .auth import NoPersonalToken
 from .models import Channel, Membership, Notification, Post, Workspace
 
 
@@ -114,7 +115,7 @@ class AccountDeleteView(APIView):
     only member go with it (channels, posts, media). If you own a workspace
     that has other members, make one of them an owner first."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, NoPersonalToken]
 
     @extend_schema(
         request=inline_serializer("AccountDelete", {"password": serializers.CharField()}),

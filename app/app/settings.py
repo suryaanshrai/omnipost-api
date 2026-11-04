@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -87,6 +88,8 @@ CORS_ALLOWED_ORIGINS = env_list(
     "http://localhost:5173,http://127.0.0.1:5173" if DEBUG else "",
 )
 CORS_ALLOW_CREDENTIALS = True
+# The web app sends X-OmniPost-Client with every request (cookie sign-in).
+CORS_ALLOW_HEADERS = (*default_headers, "x-omnipost-client")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS))
 
 AUTH_USER_MODEL = "omnipost_api.User"
@@ -161,7 +164,11 @@ TEMPLATES = [
 # BasicAuthentication is deliberately absent: it invites credentials on every
 # request and no client needs it. SessionAuthentication is kept only in DEBUG so
 # the browsable API stays usable locally.
-_AUTH_CLASSES = ["omnipost_api.authentication.ExpiringTokenAuthentication"]
+_AUTH_CLASSES = [
+    "omnipost_api.authentication.PersonalTokenAuthentication",
+    "omnipost_api.authentication.CookieTokenAuthentication",
+    "omnipost_api.authentication.ExpiringTokenAuthentication",
+]
 if DEBUG:
     _AUTH_CLASSES.append("rest_framework.authentication.SessionAuthentication")
 
@@ -362,11 +369,21 @@ ACCOUNT_ADAPTER = "omnipost_api.auth_adapter.FrontendAccountAdapter"
 # Days a sign-in token stays valid. 0 disables expiry.
 AUTH_TOKEN_TTL_DAYS = int(os.environ.get("AUTH_TOKEN_TTL_DAYS", "30"))
 
+# The web app's sign-in cookie (see authentication.CookieTokenAuthentication).
+# Lax works when the app and API share a site (app.example.com and
+# api.example.com). If they're on different sites, set None (needs HTTPS).
+AUTH_COOKIE_NAME = "omnipost_auth"
+AUTH_COOKIE_SAMESITE = os.environ.get("AUTH_COOKIE_SAMESITE", "Lax")
+AUTH_COOKIE_SECURE = not DEBUG or AUTH_COOKIE_SAMESITE == "None"
+AUTH_COOKIE_DOMAIN = os.environ.get("AUTH_COOKIE_DOMAIN") or None
+
 REST_AUTH = {
     "TOKEN_CREATOR": "omnipost_api.authentication.create_token",
     "PASSWORD_RESET_SERIALIZER": "omnipost_api.auth_serializers.FrontendPasswordResetSerializer",
     "USER_DETAILS_SERIALIZER": "omnipost_api.auth_serializers.UserDetailsSerializer",
     "OLD_PASSWORD_FIELD_ENABLED": True,
+    # Sign-in is the token (header or cookie), not a Django session as well.
+    "SESSION_LOGIN": False,
 }
 
 # Email. Without EMAIL_HOST, mail is printed to the console (dev / self-host
