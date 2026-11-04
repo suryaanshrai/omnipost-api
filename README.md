@@ -112,6 +112,30 @@ the app and API are on different sites (not just subdomains), set
 `mcp_server/` is an MCP server built on this: see its README to post from
 Claude or any MCP client.
 
+## Hosted plans (optional)
+
+With `STRIPE_SECRET_KEY` blank (self-hosting) there are no plans and no
+limits. With it set, each person's plan covers the workspaces they own:
+
+| Plan | Channels | Scheduled at once | AI (managed key) |
+|---|---|---|---|
+| Free | 3 | 10 | small lifetime allowance |
+| Creator | unlimited | unlimited | 300 text / 30 images a month |
+| Pro | unlimited | unlimited | 1,500 / 150 a month |
+
+The limits and features live in `omnipost_api/services/billing.py`
+(`PLANS`); prices come from `STRIPE_PRICE_*` (Stripe price ids) and the
+labels from `PRICE_DISPLAY_*`. Point a Stripe webhook at
+`/billing/webhook/` for `checkout.session.completed` and
+`customer.subscription.*`, and put its signing secret in
+`STRIPE_WEBHOOK_SECRET`. Going over a limit returns 402 with code
+`plan_limit`.
+
+`CLOUD_PRICING_ENABLED=true` without Stripe turns the landing page's plans
+into a fake door: the buttons collect "tell me when" emails
+(`POST /public/interest/`, listed in the admin) to test prices before
+charging.
+
 ## Permissions
 
 Every row belongs to a workspace, and every request is scoped to the

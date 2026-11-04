@@ -114,6 +114,9 @@ def complete(
             workspace_id=workspace_id, connector_slug=connector_slug, external_account_id=external_id
         ).first()
     if channel is None:
+        from .billing import check_channel_limit
+
+        check_channel_limit(workspace_id)
         channel = Channel.objects.create(
             workspace_id=workspace_id,
             connector_slug=connector_slug,

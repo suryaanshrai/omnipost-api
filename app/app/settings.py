@@ -28,7 +28,8 @@ TESTING = "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
 # --------------------------------------------------------------------------
 
 def env_bool(name: str, default: bool = False) -> bool:
-    return os.environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+    # Empty counts as unset: compose passes `${VAR:-}` through as "".
+    return (os.environ.get(name) or str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def env_list(name: str, default: str = "") -> list[str]:
@@ -191,6 +192,7 @@ REST_FRAMEWORK = {
         "user": os.environ.get("THROTTLE_USER", "3000/hour"),
         "auth": os.environ.get("THROTTLE_AUTH", "10/min"),
         "ai": os.environ.get("THROTTLE_AI", "30/min"),
+        "interest": os.environ.get("THROTTLE_INTEREST", "5/hour"),
     },
 }
 
@@ -373,7 +375,7 @@ AUTH_TOKEN_TTL_DAYS = int(os.environ.get("AUTH_TOKEN_TTL_DAYS", "30"))
 # Lax works when the app and API share a site (app.example.com and
 # api.example.com). If they're on different sites, set None (needs HTTPS).
 AUTH_COOKIE_NAME = "omnipost_auth"
-AUTH_COOKIE_SAMESITE = os.environ.get("AUTH_COOKIE_SAMESITE", "Lax")
+AUTH_COOKIE_SAMESITE = os.environ.get("AUTH_COOKIE_SAMESITE") or "Lax"
 AUTH_COOKIE_SECURE = not DEBUG or AUTH_COOKIE_SAMESITE == "None"
 AUTH_COOKIE_DOMAIN = os.environ.get("AUTH_COOKIE_DOMAIN") or None
 
@@ -493,3 +495,18 @@ if SENTRY_DSN and not TESTING:
 # aggregate counts, so an open endpoint is an acceptable self-host default —
 # a cloud deployment fronted by a scraper should set this.
 METRICS_AUTH_TOKEN = os.environ.get("METRICS_AUTH_TOKEN", "")
+
+# --------------------------------------------------------------------------
+# Hosted billing (services/billing.py). Leave STRIPE_SECRET_KEY blank on a
+# self-hosted install: there are then no plans and no limits.
+# --------------------------------------------------------------------------
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_CREATOR = os.environ.get("STRIPE_PRICE_CREATOR", "")
+STRIPE_PRICE_PRO = os.environ.get("STRIPE_PRICE_PRO", "")
+# Show plans and prices on the landing page. On without Stripe, it's a fake
+# door: the buttons record interest (PricingInterest) instead of charging.
+CLOUD_PRICING_ENABLED = env_bool("CLOUD_PRICING_ENABLED", bool(STRIPE_SECRET_KEY))
+# Shown as-is; placeholders until prices are decided.
+PRICE_DISPLAY_CREATOR = os.environ.get("PRICE_DISPLAY_CREATOR") or "$9/mo"
+PRICE_DISPLAY_PRO = os.environ.get("PRICE_DISPLAY_PRO") or "$19/mo"

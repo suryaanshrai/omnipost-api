@@ -132,7 +132,7 @@ class UserSerializer(serializers.ModelSerializer):
 class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "name", "plan", "created_at"]
+        fields = ["id", "name", "created_at"]
         read_only_fields = ["id", "created_at"]
 
 

@@ -895,6 +895,73 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserDetails'
           description: ''
+  /billing/:
+    get:
+      operationId: billing_retrieve
+      description: GET -> your plan, what you're using, and the plans on offer.
+      tags:
+      - billing
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Billing'
+          description: ''
+  /billing/checkout/:
+    post:
+      operationId: billing_checkout_create
+      description: POST {plan} -> a Stripe Checkout URL to send the browser to.
+      tags:
+      - billing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+        required: true
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingRedirect'
+          description: ''
+  /billing/portal/:
+    post:
+      operationId: billing_portal_create
+      description: POST -> a Stripe Customer Portal URL (change plan, card, invoices,
+        cancel).
+      tags:
+      - billing
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingRedirect'
+          description: ''
   /blackout-windows/:
     get:
       operationId: blackout_windows_list
@@ -3184,6 +3251,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/BioPage'
           description: ''
+  /public/interest/:
+    post:
+      operationId: public_interest_create
+      description: |-
+        POST {email, plan, note?} -> "tell me when this plan is available".
+        Measures demand for the hosted plans before they're for sale.
+      tags:
+      - public
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Interest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Interest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Interest'
+        required: true
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interest'
+          description: ''
+  /public/pricing/:
+    get:
+      operationId: public_pricing_retrieve
+      description: GET -> whether to show hosted pricing, and the plans.
+      tags:
+      - public
+      security:
+      - apiToken: []
+      - omnipostCookie: []
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pricing'
+          description: ''
   /publish-attempts/:
     get:
       operationId: publish_attempts_list
@@ -4493,6 +4612,46 @@ components:
       - hour
       - sample_size
       - weekday
+    Billing:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: 'False on a self-hosted install: no plans, no limits.'
+        plan:
+          type: string
+        status:
+          type: string
+        renews_at:
+          type: string
+          format: date-time
+          nullable: true
+        has_billing_account:
+          type: boolean
+        usage:
+          type: object
+          additionalProperties:
+            type: integer
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plan'
+      required:
+      - enabled
+      - has_billing_account
+      - plan
+      - plans
+      - renews_at
+      - status
+      - usage
+    BillingRedirect:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+      required:
+      - url
     BioPage:
       type: object
       properties:
@@ -4717,6 +4876,21 @@ components:
         * `healthy` - Healthy
         * `needs_attention` - Needs attention
         * `broken` - Broken
+    CheckoutRequest:
+      type: object
+      properties:
+        plan:
+          $ref: '#/components/schemas/CheckoutRequestPlanEnum'
+      required:
+      - plan
+    CheckoutRequestPlanEnum:
+      enum:
+      - creator
+      - pro
+      type: string
+      description: |-
+        * `creator` - creator
+        * `pro` - pro
     Connector:
       type: object
       description: |-
@@ -4986,6 +5160,31 @@ components:
       required:
       - detail
       - row
+    Interest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        plan:
+          $ref: '#/components/schemas/InterestPlanEnum'
+        note:
+          type: string
+          maxLength: 500
+      required:
+      - email
+      - plan
+    InterestPlanEnum:
+      enum:
+      - free
+      - creator
+      - pro
+      type: string
+      description: |-
+        * `free` - free
+        * `creator` - creator
+        * `pro` - pro
     Login:
       type: object
       properties:
@@ -6182,6 +6381,10 @@ components:
           type: boolean
         weekly_digest:
           type: boolean
+        plan:
+          allOf:
+          - $ref: '#/components/schemas/UserDetailsPlanEnum'
+          readOnly: true
     PatchedVoiceProfile:
       type: object
       description: |-
@@ -6296,6 +6499,35 @@ components:
               additionalProperties: {}
       required:
       - results
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price_display:
+          type: string
+        channels:
+          type: integer
+          nullable: true
+        scheduled_posts:
+          type: integer
+          nullable: true
+        features:
+          type: array
+          items:
+            type: string
+        purchasable:
+          type: boolean
+      required:
+      - channels
+      - features
+      - id
+      - name
+      - price_display
+      - purchasable
+      - scheduled_posts
     Post:
       type: object
       description: |-
@@ -6632,6 +6864,21 @@ components:
           writeOnly: true
       required:
       - channel
+    Pricing:
+      type: object
+      properties:
+        show_pricing:
+          type: boolean
+        billing_enabled:
+          type: boolean
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plan'
+      required:
+      - billing_enabled
+      - plans
+      - show_pricing
     Provider4baEnum:
       enum:
       - anthropic
@@ -7112,10 +7359,25 @@ components:
           type: boolean
         weekly_digest:
           type: boolean
+        plan:
+          allOf:
+          - $ref: '#/components/schemas/UserDetailsPlanEnum'
+          readOnly: true
       required:
       - email
       - pk
+      - plan
       - username
+    UserDetailsPlanEnum:
+      enum:
+      - free
+      - creator
+      - pro
+      type: string
+      description: |-
+        * `free` - Free
+        * `creator` - Creator
+        * `pro` - Pro
     ValidateFinding:
       type: object
       description: |-

@@ -15,6 +15,7 @@ from .models import (
     PostMetric,
     PostTarget,
     PostTargetPart,
+    PricingInterest,
     ProviderKey,
     PublishAttempt,
     QueueSlot,
@@ -37,8 +38,7 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "plan", "created_at")
-    list_filter = ("plan",)
+    list_display = ("id", "name", "created_at")
 
 
 @admin.register(Workspace)
@@ -168,3 +168,9 @@ class BlackoutWindowAdmin(admin.ModelAdmin):
 class RecurrenceRuleAdmin(admin.ModelAdmin):
     list_display = ("id", "channel", "interval_hours", "next_run_at", "is_active")
     list_filter = ("is_active", "channel")
+
+
+@admin.register(PricingInterest)
+class PricingInterestAdmin(admin.ModelAdmin):
+    list_display = ("email", "plan", "created_at")
+    list_filter = ("plan",)

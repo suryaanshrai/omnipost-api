@@ -26,8 +26,12 @@ def schedule_post(post: Post, run_at: datetime | None = None) -> Post:
     """Every target at the same time; now if no time is given."""
     from jobs.scheduler import schedule_post_target
 
+    from . import billing
+
+    targets = _targets(post)
+    billing.check_scheduled_limit(post)
     run_at = run_at or timezone.now()
-    for target in _targets(post):
+    for target in targets:
         schedule_post_target(target, run_at=run_at)
     post.status = Post.STATUS_SCHEDULED
     post.scheduled_for = run_at
@@ -40,10 +44,13 @@ def queue_post(post: Post) -> Post:
     queueing.NoOpenSlotError if a channel has none."""
     from jobs.scheduler import schedule_post_target
 
+    from . import billing
     from .queueing import next_open_slot_run_at
 
+    targets = _targets(post)
+    billing.check_scheduled_limit(post)
     resolved = []
-    for target in _targets(post):
+    for target in targets:
         run_at = next_open_slot_run_at(target.channel)
         schedule_post_target(target, run_at=run_at)
         resolved.append(run_at)

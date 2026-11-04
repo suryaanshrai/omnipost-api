@@ -43,6 +43,9 @@ class ChannelViewSet(WorkspaceScopedViewSet):
     write_role = Membership.ROLE_ADMIN
 
     def perform_create(self, serializer):
+        from ..services.billing import check_channel_limit
+
+        check_channel_limit(serializer.validated_data["workspace"])
         super().perform_create(serializer)
         serializer.instance.created_by = self.request.user
         serializer.instance.save(update_fields=["created_by"])

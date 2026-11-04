@@ -36,6 +36,7 @@ from ..serializers import (
     PostTargetSerializer,
     PublishAttemptSerializer,
 )
+from ..services.billing import PlanLimitReached
 from .common import (
     WorkspaceScopedViewSet,
     _int_param,
@@ -261,6 +262,9 @@ class PostViewSet(WorkspaceScopedViewSet):
         except (NothingToSchedule, NoOpenSlotError) as exc:
             copy.delete()
             raise ValidationError(str(exc)) from exc
+        except PlanLimitReached:
+            copy.delete()
+            raise
         return Response(PostSerializer(copy).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -495,8 +499,8 @@ class PostViewSet(WorkspaceScopedViewSet):
                     else:
                         queue_post(post)
                 created += 1
-            except (ValidationError, NoOpenSlotError) as exc:
-                detail = exc.detail if isinstance(exc, ValidationError) else str(exc)
+            except (ValidationError, NoOpenSlotError, PlanLimitReached) as exc:
+                detail = exc.detail if isinstance(exc, ValidationError | PlanLimitReached) else str(exc)
                 errors.append({"row": row_number, "detail": detail})
 
         return Response({"created": created, "errors": errors}, status=status.HTTP_200_OK)

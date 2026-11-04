@@ -62,8 +62,14 @@ def _fire_once(rule_id: int, now) -> bool:
         rule.next_run_at = next_run
         rule.save(update_fields=["next_variant_index", "next_run_at"])
 
+    from omnipost_api.services.billing import PlanLimitReached
     from omnipost_api.services.scheduling import schedule_post
 
-    schedule_post(post, now)
+    try:
+        schedule_post(post, now)
+    except PlanLimitReached:
+        # The plan's scheduled-post limit is full: leave it in Drafts.
+        logger.warning("Recurrence rule %s: plan limit reached, post %s left as a draft", rule_id, post.pk)
+        return True
     logger.info("Recurrence rule %s fired -> post %s", rule_id, post.pk)
     return True

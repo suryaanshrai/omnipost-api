@@ -16,7 +16,7 @@ to put (post_configs existed but the UI never wrote to it).
 The models are split by area; import them from here (omnipost_api.models).
 """
 
-from .accounts import ApiToken, Membership, Organization, User, Workspace
+from .accounts import ApiToken, Membership, Organization, PricingInterest, User, Workspace
 from .activity import AuditEvent, Feed, Notification, Webhook
 from .ai import ProviderKey, UsageCounter, VoiceProfile
 from .channels import AppCredential, Channel, Credential
@@ -41,6 +41,7 @@ __all__ = [
     "PostMetric",
     "PostTarget",
     "PostTargetPart",
+    "PricingInterest",
     "ProviderKey",
     "PublishAttempt",
     "QueueSlot",

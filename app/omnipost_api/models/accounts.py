@@ -13,6 +13,19 @@ class User(AbstractUser):
     weekly_digest = models.BooleanField(default=True)
     last_digest_at = models.DateTimeField(null=True, blank=True)
 
+    # Hosted billing (services/billing.py). The plan covers every workspace
+    # this person owns. Only enforced when Stripe is configured; a
+    # self-hosted install has no limits.
+    PLAN_FREE = "free"
+    PLAN_CREATOR = "creator"
+    PLAN_PRO = "pro"
+    PLAN_CHOICES = [(PLAN_FREE, "Free"), (PLAN_CREATOR, "Creator"), (PLAN_PRO, "Pro")]
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default=PLAN_FREE)
+    plan_status = models.CharField(max_length=30, blank=True)  # Stripe's subscription status
+    plan_renews_at = models.DateTimeField(null=True, blank=True)
+    stripe_customer_id = models.CharField(max_length=64, blank=True, db_index=True)
+    stripe_subscription_id = models.CharField(max_length=64, blank=True)
+
 
 class Organization(models.Model):
     """The billing boundary. A solo signup gets one auto-created Organization
@@ -20,12 +33,6 @@ class Organization(models.Model):
 
     name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
-
-    PLAN_FREE = "free"
-    PLAN_PRO = "pro"
-    PLAN_AGENCY = "agency"
-    PLAN_CHOICES = [(PLAN_FREE, "Free"), (PLAN_PRO, "Pro"), (PLAN_AGENCY, "Agency")]
-    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default=PLAN_FREE)
 
     def __str__(self) -> str:
         return self.name
@@ -108,3 +115,17 @@ class ApiToken(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.prefix})"
+
+
+class PricingInterest(models.Model):
+    """"Tell me when this plan is available": a fake-door test of the hosted
+    prices before billing goes live (POST /public/interest/)."""
+
+    email = models.EmailField()
+    plan = models.CharField(max_length=20)
+    note = models.CharField(max_length=500, blank=True)
+    user = models.ForeignKey("omnipost_api.User", null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

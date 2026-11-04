@@ -16,7 +16,7 @@ def test_signup_auto_provisions_personal_workspace(db, django_user_model):
 
     membership = Membership.objects.get(user=user)
     assert membership.role == Membership.ROLE_OWNER
-    assert membership.workspace.organization.plan == "free"
+    assert user.plan == "free"
 
 
 def test_channel_credentials_round_trip(mastodon_channel):

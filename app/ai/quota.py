@@ -66,20 +66,38 @@ def quota_workspace(workspace: Workspace) -> Workspace:
     return first or workspace
 
 
+def _period_and_limit(workspace: Workspace, feature: str) -> tuple[str, int | None]:
+    """A paid hosted plan gets a monthly allowance; everyone else the small
+    lifetime one."""
+    from django.utils import timezone
+    from omnipost_api.services import billing
+
+    monthly = billing.ai_monthly_limit(workspace, feature)
+    if monthly is not None:
+        return timezone.now().strftime("%Y-%m"), monthly
+    return _FREE_PERIOD, _default_limit(feature)
+
+
 def reserve(workspace: Workspace, feature: str) -> Reservation:
     workspace = quota_workspace(workspace)
+    period, limit = _period_and_limit(workspace, feature)
     with transaction.atomic():
         counter, _ = UsageCounter.objects.get_or_create(
             workspace=workspace,
             feature=feature,
-            period=_FREE_PERIOD,
-            defaults={"limit": _default_limit(feature)},
+            period=period,
+            defaults={"limit": limit},
         )
+        # A monthly counter follows the plan (it may have changed this month).
+        # The lifetime one keeps whatever limit it has, so an admin can raise it.
+        if period != _FREE_PERIOD and counter.limit != limit:
+            UsageCounter.objects.filter(pk=counter.pk).update(limit=limit)
         counter = UsageCounter.objects.select_for_update().get(pk=counter.pk)
         if counter.limit is not None and (counter.reserved + counter.committed) >= counter.limit:
             raise QuotaExceeded(
-                f"Free-tier limit of {counter.limit} reached for {feature}. "
-                "Add a BYOK provider key to keep generating with your own quota."
+                f"{'This month' if period != _FREE_PERIOD else 'The free'} limit of {counter.limit} "
+                f"is used up for {feature}. Add your own provider key to keep generating"
+                f"{'' if period != _FREE_PERIOD else ', or upgrade'}."
             )
         counter.reserved += 1
         counter.save(update_fields=["reserved"])
@@ -102,4 +120,6 @@ def release(reservation: Reservation) -> None:
 
 
 def usage_for(workspace: Workspace) -> list[UsageCounter]:
-    return list(UsageCounter.objects.filter(workspace=quota_workspace(workspace), period=_FREE_PERIOD))
+    workspace = quota_workspace(workspace)
+    periods = {_period_and_limit(workspace, f)[0] for f in _DEFAULT_LIMITS}
+    return list(UsageCounter.objects.filter(workspace=workspace, period__in=periods))
