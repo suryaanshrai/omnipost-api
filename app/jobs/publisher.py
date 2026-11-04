@@ -201,9 +201,15 @@ def _mark_succeeded(attempt: PublishAttempt, post_target: PostTarget, outcome):
     _recompute_post_status(post_target.post_id)
     notify.post_published(post_target)
 
-    if post_target.remote_id:
-        return lambda: job_queue.enqueue_metrics_poll(post_target.pk)
-    return None
+    if not post_target.remote_id:
+        return None
+
+    def followups() -> None:
+        job_queue.enqueue_metrics_poll(post_target.pk)
+        if post_target.first_comment:
+            job_queue.enqueue_first_comment(post_target.pk)
+
+    return followups
 
 
 def _mark_waiting(attempt: PublishAttempt, post_target: PostTarget, outcome):

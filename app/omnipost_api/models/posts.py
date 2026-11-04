@@ -86,6 +86,12 @@ class PostTarget(models.Model):
     channel = models.ForeignKey(Channel, on_delete=models.CASCADE, related_name="post_targets")
     format = models.CharField(max_length=20, choices=Post.KIND_CHOICES, blank=True, default="")
     text_override = models.TextField(blank=True, default="")
+    # Posted as a reply/comment right after the post, where the platform
+    # supports it (connector.capabilities.supports_first_comment). Common
+    # for keeping links out of the main post on LinkedIn and Instagram.
+    first_comment = models.TextField(blank=True, default="")
+    # "", "posted", or why it couldn't be posted.
+    first_comment_result = models.CharField(max_length=300, blank=True, default="")
     media = models.ManyToManyField(MediaAsset, blank=True, related_name="post_targets")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     # Resolved final send time for THIS channel — may differ from Post.scheduled_for

@@ -49,6 +49,11 @@ class Workspace(models.Model):
     approval_workflow_enabled = models.BooleanField(default=False)
     # Add utm_source/medium/campaign to a post's link at publish time.
     utm_tagging = models.BooleanField(default=False)
+    # Public link-in-bio page at /bio/<slug> (off until switched on).
+    bio_enabled = models.BooleanField(default=False)
+    bio_description = models.CharField(max_length=300, blank=True, default="")
+    # [{"label": "...", "url": "https://..."}], shown above recent posts.
+    bio_links = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

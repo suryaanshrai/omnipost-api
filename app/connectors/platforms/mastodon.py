@@ -91,6 +91,16 @@ class MastodonConnector(Connector):
             retry_after_s=max(part.delay_after_s, 1),
         )
 
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        response = requests.post(
+            f"https://{credentials['INSTANCE_DOMAIN']}/api/v1/statuses",
+            headers={"Authorization": f"Bearer {credentials['ACCESS_TOKEN']}"},
+            json={"status": text, "in_reply_to_id": remote_id},
+            timeout=30,
+        )
+        raise_for_platform(response, "Mastodon", action="posting the first comment", auth_statuses=(401,))
+        return str(response.json().get("id") or "") or None
+
     def _register_app(self, instance_domain: str, redirect_uri: str) -> dict:
         response = requests.post(
             f"https://{instance_domain}/api/v1/apps",

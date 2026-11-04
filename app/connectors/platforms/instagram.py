@@ -204,3 +204,13 @@ class InstagramConnector(Connector):
             f"{meta_oauth.GRAPH_BASE}/{media_id}", params={"fields": "permalink", "access_token": token}, timeout=15
         )
         return response.json().get("permalink") if response.ok else None
+
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        response = requests.post(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}/comments",
+            data={"message": text, "access_token": credentials["PAGE_ACCESS_TOKEN"]},
+            timeout=30,
+        )
+        if not response.ok:
+            meta_oauth.raise_graph_error(response, action="posting the first comment on Instagram")
+        return response.json().get("id")

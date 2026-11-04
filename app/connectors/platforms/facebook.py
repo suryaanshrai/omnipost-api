@@ -89,3 +89,13 @@ class FacebookConnector(Connector):
         remote_id = response.json().get("id") or response.json().get("post_id", "")
         permalink = f"https://www.facebook.com/{remote_id}" if remote_id else None
         return PublishOutcome(done=True, remote_id=remote_id, permalink=permalink)
+
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        response = requests.post(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}/comments",
+            data={"message": text, "access_token": credentials["PAGE_ACCESS_TOKEN"]},
+            timeout=30,
+        )
+        if not response.ok:
+            meta_oauth.raise_graph_error(response, action="posting the first comment on Facebook")
+        return response.json().get("id")

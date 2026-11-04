@@ -2399,6 +2399,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/Post'
           description: ''
+  /posts/{id}/repost/:
+    post:
+      operationId: posts_repost_create
+      description: |-
+        Evergreen: copy a post and send it again, into each channel's next
+        queue slot (default) or now. With approvals on, the copy goes to
+        review instead.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this post.
+        required: true
+      tags:
+      - posts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepostRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RepostRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RepostRequest'
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
   /posts/{id}/request-changes/:
     post:
       operationId: posts_request_changes_create
@@ -2600,6 +2637,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/ImportCsvResult'
           description: ''
+  /posts/performance/:
+    get:
+      operationId: posts_performance_retrieve
+      description: |-
+        Latest metrics for many posts at once: {post_id: [entry, ...]},
+        one entry per published target that has a snapshot. Replaces one
+        request per post on the Analytics screen.
+      parameters:
+      - in: query
+        name: ids
+        schema:
+          type: string
+        description: Comma-separated post ids (up to 100).
+        required: true
+      - in: query
+        name: workspace
+        schema:
+          type: integer
+        required: true
+      tags:
+      - posts
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceBatch'
+          description: ''
   /provider-keys/:
     get:
       operationId: provider_keys_list
@@ -2793,6 +2861,30 @@ paths:
       responses:
         '204':
           description: No response body
+  /public/bio/{slug}/:
+    get:
+      operationId: public_bio_retrieve
+      description: |-
+        GET /public/bio/<slug>/: a workspace's link-in-bio page, if it has
+        switched one on. Recent published posts, newest first, each pointing at
+        its link (or its first published copy).
+      parameters:
+      - in: path
+        name: slug
+        schema:
+          type: string
+        required: true
+      tags:
+      - public
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BioPage'
+          description: ''
   /publish-attempts/:
     get:
       operationId: publish_attempts_list
@@ -3993,6 +4085,28 @@ components:
       - hour
       - sample_size
       - weekday
+    BioPage:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        links:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        posts:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - description
+      - links
+      - name
+      - posts
     BlackoutWindow:
       type: object
       description: |-
@@ -4051,6 +4165,11 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
         text_override:
           type: string
+        first_comment:
+          type: string
+        first_comment_result:
+          type: string
+          readOnly: true
         media:
           type: array
           items:
@@ -4104,6 +4223,7 @@ components:
       - channel
       - created_at
       - epoch
+      - first_comment_result
       - id
       - parts
       - permalink
@@ -4208,6 +4328,8 @@ components:
           type: boolean
         supports_metrics:
           type: boolean
+        supports_first_comment:
+          type: boolean
         credential_fields:
           type: array
           items:
@@ -4246,6 +4368,7 @@ components:
       - requires_own_app
       - slug
       - supports_alt_text
+      - supports_first_comment
       - supports_link
       - supports_metrics
       - supports_oauth
@@ -5697,10 +5820,28 @@ components:
           type: boolean
         utm_tagging:
           type: boolean
+        bio_enabled:
+          type: boolean
+        bio_description:
+          type: string
+          maxLength: 300
+        bio_links: {}
         created_at:
           type: string
           format: date-time
           readOnly: true
+    PerformanceBatch:
+      type: object
+      properties:
+        results:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: {}
+      required:
+      - results
     Post:
       type: object
       description: |-
@@ -5881,6 +6022,11 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
         text_override:
           type: string
+        first_comment:
+          type: string
+        first_comment_result:
+          type: string
+          readOnly: true
         media:
           type: array
           items:
@@ -5925,6 +6071,7 @@ components:
       - channel
       - created_at
       - epoch
+      - first_comment_result
       - id
       - parts
       - permalink
@@ -6017,6 +6164,8 @@ components:
           - $ref: '#/components/schemas/PostKindEnum'
           - $ref: '#/components/schemas/BlankEnum'
         text_override:
+          type: string
+        first_comment:
           type: string
         media:
           type: array
@@ -6278,6 +6427,13 @@ components:
       - password1
       - password2
       - username
+    RepostRequest:
+      type: object
+      properties:
+        when:
+          allOf:
+          - $ref: '#/components/schemas/WhenEnum'
+          default: queue
     RepurposeRequest:
       type: object
       properties:
@@ -6351,6 +6507,11 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
         text_override:
           type: string
+        first_comment:
+          type: string
+        first_comment_result:
+          type: string
+          readOnly: true
         media:
           type: array
           items:
@@ -6393,6 +6554,7 @@ components:
       - channel
       - created_at
       - epoch
+      - first_comment_result
       - id
       - parts
       - permalink
@@ -6645,6 +6807,14 @@ components:
       - secret
       - url
       - workspace
+    WhenEnum:
+      enum:
+      - queue
+      - now
+      type: string
+      description: |-
+        * `queue` - queue
+        * `now` - now
     Workspace:
       type: object
       properties:
@@ -6668,6 +6838,12 @@ components:
           type: boolean
         utm_tagging:
           type: boolean
+        bio_enabled:
+          type: boolean
+        bio_description:
+          type: string
+          maxLength: 300
+        bio_links: {}
         created_at:
           type: string
           format: date-time

@@ -66,3 +66,8 @@ def enqueue_notification_email(notification_id: int) -> None:
 def enqueue_webhook(hook_id: int, payload: dict) -> None:
     queue = django_rq.get_queue("default")
     queue.enqueue("jobs.webhooks.deliver", hook_id, payload)
+
+
+def enqueue_first_comment(post_target_id: int) -> None:
+    queue = django_rq.get_queue("publish")
+    queue.enqueue("jobs.first_comment.post_first_comment", post_target_id)

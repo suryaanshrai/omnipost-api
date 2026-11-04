@@ -14,8 +14,6 @@ from django.db import transaction
 from django.utils import timezone
 from omnipost_api.models import Post, PostTarget, RecurrenceRule
 
-from . import scheduler
-
 logger = logging.getLogger(__name__)
 
 
@@ -52,15 +50,20 @@ def _fire_once(rule_id: int, now) -> bool:
         )
         if rule.media.exists():
             post.base_media.set(rule.media.all())
-        target = PostTarget.objects.create(post=post, channel=rule.channel)
+        PostTarget.objects.create(post=post, channel=rule.channel)
 
         rule.next_variant_index += 1
-        rule.next_run_at = rule.next_run_at + timedelta(hours=rule.interval_hours)
+        # Skip occurrences missed while paused or down: one post now, not a
+        # burst of catch-up posts.
+        step = timedelta(hours=rule.interval_hours)
+        next_run = rule.next_run_at + step
+        while next_run <= now:
+            next_run += step
+        rule.next_run_at = next_run
         rule.save(update_fields=["next_variant_index", "next_run_at"])
 
-    scheduler.schedule_post_target(target, run_at=now)
-    post.status = Post.STATUS_SCHEDULED
-    post.scheduled_for = now
-    post.save(update_fields=["status", "scheduled_for", "updated_at"])
+    from omnipost_api.services.scheduling import schedule_post
+
+    schedule_post(post, now)
     logger.info("Recurrence rule %s fired -> post %s", rule_id, post.pk)
     return True

@@ -47,7 +47,27 @@ def _default_limit(feature: str) -> int:
     return overrides.get(feature, _DEFAULT_LIMITS.get(feature, 0))
 
 
+def quota_workspace(workspace: Workspace) -> Workspace:
+    """The free allowance belongs to the account that owns the workspace,
+    kept on that owner's first workspace. Otherwise creating another
+    workspace (free and unlimited) reset the allowance."""
+    from omnipost_api.models import Membership
+
+    owner = (
+        Membership.objects.filter(workspace=workspace, role=Membership.ROLE_OWNER).order_by("created_at").first()
+    )
+    if owner is None:
+        return workspace
+    first = (
+        Workspace.objects.filter(memberships__user_id=owner.user_id, memberships__role=Membership.ROLE_OWNER)
+        .order_by("created_at", "pk")
+        .first()
+    )
+    return first or workspace
+
+
 def reserve(workspace: Workspace, feature: str) -> Reservation:
+    workspace = quota_workspace(workspace)
     with transaction.atomic():
         counter, _ = UsageCounter.objects.get_or_create(
             workspace=workspace,
@@ -82,4 +102,4 @@ def release(reservation: Reservation) -> None:
 
 
 def usage_for(workspace: Workspace) -> list[UsageCounter]:
-    return list(UsageCounter.objects.filter(workspace=workspace, period=_FREE_PERIOD))
+    return list(UsageCounter.objects.filter(workspace=quota_workspace(workspace), period=_FREE_PERIOD))

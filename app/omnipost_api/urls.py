@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import auth, views, views_account, views_ai
+from . import auth, views, views_account, views_ai, views_public
 
 router = DefaultRouter()
 router.register("workspaces", views.WorkspaceViewSet, basename="workspace")
@@ -26,6 +26,7 @@ app_name = "omnipost_api"
 urlpatterns = [
     path("", include(router.urls)),
     path("connectors/", views.ConnectorsView.as_view(), name="connectors"),
+    path("public/bio/<slug:slug>/", views_public.BioPageView.as_view(), name="public-bio"),
     path("oauth/start/", views.OAuthStartView.as_view(), name="oauth-start"),
     path("oauth/complete/", views.OAuthCompleteView.as_view(), name="oauth-complete"),
     path("validate/", views.ValidateView.as_view(), name="validate"),

@@ -97,6 +97,7 @@ class ConnectorsView(APIView):
                     "supports_oauth": connector.supports_oauth,
                     "available": connector.available_on_server,
                     "supports_metrics": connector.supports_metrics,
+                    "supports_first_comment": connector.supports_first_comment,
                     "credential_fields": list(connector.credential_fields),
                     "oauth_extra_fields": list(connector.oauth_extra_fields),
                     "max_text_length": caps.max_text_length,

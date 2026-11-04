@@ -295,6 +295,9 @@ class XConnector(Connector):
             self._raise_error(response, action="posting a tweet")
         return response.json()["data"]["id"]
 
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        return self._create_tweet(credentials["ACCESS_TOKEN"], text, reply_to=remote_id)
+
     def _upload_media(self, token: str, item: MediaRef) -> tuple[str, dict[str, Any]]:
         content = self._fetch_bytes(item.url)
         category = _MEDIA_CATEGORY.get(item.kind, "tweet_image")

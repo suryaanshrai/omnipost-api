@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers as drf_serializers
@@ -127,6 +128,7 @@ class PostViewSet(WorkspaceScopedViewSet):
         # client_reviewer ranks with viewer; approve/request_changes check
         # for it explicitly.
         "duplicate": Membership.ROLE_CONTRIBUTOR,
+        "repost": Membership.ROLE_EDITOR,
         "approve": Membership.ROLE_VIEWER,
         "request_changes": Membership.ROLE_VIEWER,
     }
@@ -192,24 +194,17 @@ class PostViewSet(WorkspaceScopedViewSet):
         (ISO 8601, optional) overrides Post.scheduled_for for an immediate
         "publish now". For per-channel queue-slot scheduling instead, see
         `queue`."""
-        from jobs.scheduler import schedule_post_target
+        from ..services.scheduling import NothingToSchedule, schedule_post
 
         post = self.get_object()
         self._check_can_schedule(post)
 
         run_at_raw = request.data.get("run_at")
         run_at = _parse_iso(run_at_raw) if run_at_raw else (post.scheduled_for or timezone.now())
-
-        targets = list(post.targets.exclude(status=PostTarget.STATUS_CANCELED))
-        if not targets:
-            raise ValidationError("This post has no channel targets to schedule.")
-
-        for target in targets:
-            schedule_post_target(target, run_at=run_at)
-
-        post.status = Post.STATUS_SCHEDULED
-        post.scheduled_for = run_at
-        post.save(update_fields=["status", "scheduled_for", "updated_at"])
+        try:
+            schedule_post(post, run_at)
+        except NothingToSchedule as exc:
+            raise ValidationError(str(exc)) from exc
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
     @extend_schema(request=None, responses=PostSerializer)
@@ -218,57 +213,100 @@ class PostViewSet(WorkspaceScopedViewSet):
         """Schedules each target via its own channel's next open QueueSlot
         (in that channel's timezone, respecting BlackoutWindows and
         min_gap_minutes) instead of one explicit run_at for every target."""
-        from jobs.scheduler import schedule_post_target
-
-        from ..services.queueing import NoOpenSlotError, next_open_slot_run_at
+        from ..services.queueing import NoOpenSlotError
+        from ..services.scheduling import NothingToSchedule, queue_post
 
         post = self.get_object()
         self._check_can_schedule(post)
-
-        targets = list(post.targets.exclude(status=PostTarget.STATUS_CANCELED))
-        if not targets:
-            raise ValidationError("This post has no channel targets to schedule.")
-
-        resolved: list[datetime] = []
-        for target in targets:
-            try:
-                run_at = next_open_slot_run_at(target.channel)
-            except NoOpenSlotError as exc:
-                raise ValidationError(str(exc)) from exc
-            schedule_post_target(target, run_at=run_at)
-            resolved.append(run_at)
-
-        post.status = Post.STATUS_SCHEDULED
-        post.scheduled_for = min(resolved)
-        post.save(update_fields=["status", "scheduled_for", "updated_at"])
+        try:
+            queue_post(post)
+        except (NothingToSchedule, NoOpenSlotError) as exc:
+            raise ValidationError(str(exc)) from exc
         return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
 
     @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"])
     def duplicate(self, request, pk=None):
         """A new draft with the same text, media, link and channels."""
-        source = self.get_object()
-        copy = Post.objects.create(
-            workspace=source.workspace,
-            author=request.user,
-            kind=source.kind,
-            base_text=source.base_text,
-            link=source.link,
-            voice_profile=source.voice_profile,
-            status=Post.STATUS_DRAFT,
-        )
-        copy.base_media.set(source.base_media.all())
-        for target in source.targets.all():
-            new_target = PostTarget.objects.create(
-                post=copy, channel=target.channel, format=target.format, text_override=target.text_override
-            )
-            new_target.media.set(target.media.all())
-            for part in target.parts.all():
-                new_part = part.__class__.objects.create(
-                    post_target=new_target, sequence=part.sequence, text=part.text, delay_after_s=part.delay_after_s
-                )
-                new_part.media.set(part.media.all())
+        from ..services.scheduling import duplicate_post
+
+        copy = duplicate_post(self.get_object(), request.user)
         return Response(PostSerializer(copy).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        request=inline_serializer(
+            "RepostRequest", fields={"when": drf_serializers.ChoiceField(choices=["queue", "now"], default="queue")}
+        ),
+        responses=PostSerializer,
+    )
+    @action(detail=True, methods=["post"])
+    def repost(self, request, pk=None):
+        """Evergreen: copy a post and send it again, into each channel's next
+        queue slot (default) or now. With approvals on, the copy goes to
+        review instead."""
+        from ..services.queueing import NoOpenSlotError
+        from ..services.scheduling import NothingToSchedule, duplicate_post, queue_post, schedule_post
+
+        source = self.get_object()
+        copy = duplicate_post(source, request.user)
+        if source.workspace.approval_workflow_enabled:
+            copy.status = Post.STATUS_IN_REVIEW
+            copy.save(update_fields=["status", "updated_at"])
+            return Response(PostSerializer(copy).data, status=status.HTTP_201_CREATED)
+        try:
+            if request.data.get("when") == "now":
+                schedule_post(copy)
+            else:
+                queue_post(copy)
+        except (NothingToSchedule, NoOpenSlotError) as exc:
+            copy.delete()
+            raise ValidationError(str(exc)) from exc
+        return Response(PostSerializer(copy).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("workspace", int, required=True),
+            OpenApiParameter("ids", str, required=True, description="Comma-separated post ids (up to 100)."),
+        ],
+        responses=inline_serializer(
+            "PerformanceBatch",
+            fields={
+                "results": drf_serializers.DictField(child=drf_serializers.ListField(child=drf_serializers.DictField()))
+            },
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="performance")
+    def performance_batch(self, request):
+        """Latest metrics for many posts at once: {post_id: [entry, ...]},
+        one entry per published target that has a snapshot. Replaces one
+        request per post on the Analytics screen."""
+        workspace_id = _int_param(request, "workspace")
+        if workspace_id is None or workspace_id not in workspaces_for_user(request.user):
+            raise PermissionDenied("You are not a member of this workspace.")
+        try:
+            ids = [int(x) for x in (request.query_params.get("ids") or "").split(",") if x.strip()][:100]
+        except ValueError:
+            raise ValidationError({"ids": "Comma-separated integers."}) from None
+        targets = (
+            PostTarget.objects.filter(post__workspace_id=workspace_id, post_id__in=ids)
+            .select_related("channel")
+            .prefetch_related("metrics")
+        )
+        results: dict[str, list] = {str(i): [] for i in ids}
+        for target in targets:
+            latest = target.metrics.first()
+            if latest is None:
+                continue
+            results[str(target.post_id)].append(
+                {
+                    "post_target": target.pk,
+                    "channel": target.channel_id,
+                    "connector_slug": target.channel.connector_slug,
+                    "permalink": target.permalink,
+                    "metric": PostMetricSerializer(latest).data,
+                }
+            )
+        return Response({"results": results})
 
     @extend_schema(request=None, responses=PostSerializer)
     @action(detail=True, methods=["post"], url_path="submit-for-review")
@@ -401,9 +439,8 @@ class PostViewSet(WorkspaceScopedViewSet):
         via its channel's next open QueueSlot (see `queue`); a row with one
         is scheduled explicitly (see `schedule`). Upload as multipart `file`
         or as a `csv_text` form field; `workspace` is always required."""
-        from jobs.scheduler import schedule_post_target
-
-        from ..services.queueing import NoOpenSlotError, next_open_slot_run_at
+        from ..services.queueing import NoOpenSlotError
+        from ..services.scheduling import queue_post, schedule_post
 
         try:
             workspace_id = int(request.data.get("workspace") or 0)
@@ -437,21 +474,26 @@ class PostViewSet(WorkspaceScopedViewSet):
                     raise ValidationError(f"No channel {channel_id_raw!r} in this workspace.") from None
 
                 run_at_raw = (row.get("run_at") or "").strip()
-                run_at = _parse_iso(run_at_raw) if run_at_raw else next_open_slot_run_at(channel)
+                run_at = _parse_iso(run_at_raw) if run_at_raw else None
+                kind = (row.get("kind") or "text").strip() or "text"
+                if kind not in dict(Post.KIND_CHOICES):
+                    raise ValidationError(f"Unknown kind {kind!r}.")
 
-                post = Post.objects.create(
-                    workspace_id=workspace_id,
-                    author=request.user,
-                    kind=(row.get("kind") or "text").strip() or "text",
-                    base_text=text,
-                    link=(row.get("link") or "").strip(),
-                    status=Post.STATUS_DRAFT,
-                )
-                target = PostTarget.objects.create(post=post, channel=channel)
-                schedule_post_target(target, run_at=run_at)
-                post.status = Post.STATUS_SCHEDULED
-                post.scheduled_for = run_at
-                post.save(update_fields=["status", "scheduled_for", "updated_at"])
+                # One row, one transaction: a row that fails leaves nothing behind.
+                with transaction.atomic():
+                    post = Post.objects.create(
+                        workspace_id=workspace_id,
+                        author=request.user,
+                        kind=kind,
+                        base_text=text,
+                        link=(row.get("link") or "").strip(),
+                        status=Post.STATUS_DRAFT,
+                    )
+                    PostTarget.objects.create(post=post, channel=channel)
+                    if run_at:
+                        schedule_post(post, run_at)
+                    else:
+                        queue_post(post)
                 created += 1
             except (ValidationError, NoOpenSlotError) as exc:
                 detail = exc.detail if isinstance(exc, ValidationError) else str(exc)

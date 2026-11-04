@@ -159,12 +159,25 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Workspace
         fields = [
-            "id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "utm_tagging", "created_at",
+            "id", "organization", "name", "slug", "timezone", "approval_workflow_enabled", "utm_tagging",
+            "bio_enabled", "bio_description", "bio_links", "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 
     def validate_timezone(self, value):
         return validate_timezone_name(value)
+
+    def validate_bio_links(self, value):
+        if not isinstance(value, list) or len(value) > 20:
+            raise serializers.ValidationError("Up to 20 links.")
+        clean = []
+        for item in value:
+            label = str((item or {}).get("label", "")).strip()[:80]
+            url = str((item or {}).get("url", "")).strip()
+            if not label or not url.startswith(("https://", "http://")):
+                raise serializers.ValidationError("Each link needs a label and an http(s) URL.")
+            clean.append({"label": label, "url": url[:500]})
+        return clean
 
 
 class MembershipSerializer(WorkspaceScopedSerializer):
@@ -337,6 +350,7 @@ class ConnectorSerializer(serializers.Serializer):
     # (e.g. no META_APP_ID): connecting would fail, so the UI says so up front.
     available = serializers.BooleanField()
     supports_metrics = serializers.BooleanField()
+    supports_first_comment = serializers.BooleanField()
     credential_fields = serializers.ListField(child=serializers.CharField())
     oauth_extra_fields = serializers.ListField(child=serializers.CharField())
     max_text_length = serializers.IntegerField(allow_null=True)
@@ -400,7 +414,7 @@ class PostTargetWriteSerializer(WorkspaceScopedSerializer):
 
     class Meta:
         model = PostTarget
-        fields = ["channel", "format", "text_override", "media", "parts"]
+        fields = ["channel", "format", "text_override", "first_comment", "media", "parts"]
 
 
 class PostTargetSerializer(serializers.ModelSerializer):
@@ -414,6 +428,8 @@ class PostTargetSerializer(serializers.ModelSerializer):
             "channel",
             "format",
             "text_override",
+            "first_comment",
+            "first_comment_result",
             "media",
             "parts",
             "status",
@@ -427,6 +443,7 @@ class PostTargetSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "first_comment_result",
             "status",
             "remote_id",
             "permalink",

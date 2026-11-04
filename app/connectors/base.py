@@ -144,6 +144,15 @@ class Connector(ABC):
     def supports_metrics(self) -> bool:
         return type(self).fetch_metrics is not Connector.fetch_metrics
 
+    @property
+    def supports_first_comment(self) -> bool:
+        return type(self).post_first_comment is not Connector.post_first_comment
+
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        """Reply to / comment on our own just-published post. Returns the
+        comment's id when the platform gives one."""
+        raise NotImplementedError(f"{self.slug} does not support a first comment")
+
     slug: str
     capabilities: Capabilities
     # True for connectors that must run under the *workspace's own* OAuth

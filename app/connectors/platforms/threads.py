@@ -234,6 +234,12 @@ class ThreadsConnector(Connector):
         media_id = response.json()["id"]
         return PublishOutcome(done=True, remote_id=media_id, permalink=f"https://www.threads.net/post/{media_id}")
 
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        user_id = credentials["THREADS_USER_ID"]
+        token = credentials["ACCESS_TOKEN"]
+        creation_id = self._create_container(user_id, token, text=text, media=[], reply_to_id=remote_id)
+        return self._publish_container(user_id, token, creation_id).remote_id
+
     def _raise_error(self, response: requests.Response, *, action: str) -> None:
         if response.status_code == 401:
             raise AuthExpired("Threads rejected this channel's credentials.", raw_detail=response.text[:500])
