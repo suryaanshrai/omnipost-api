@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import auth, views, views_ai
+from . import auth, views, views_account, views_ai
 
 router = DefaultRouter()
 router.register("workspaces", views.WorkspaceViewSet, basename="workspace")
@@ -17,6 +17,7 @@ router.register("app-credentials", views.AppCredentialViewSet, basename="app-cre
 router.register("queue-slots", views.QueueSlotViewSet, basename="queue-slot")
 router.register("blackout-windows", views.BlackoutWindowViewSet, basename="blackout-window")
 router.register("recurrence-rules", views.RecurrenceRuleViewSet, basename="recurrence-rule")
+router.register("notifications", views_account.NotificationViewSet, basename="notification")
 
 app_name = "omnipost_api"
 
@@ -41,5 +42,7 @@ urlpatterns = [
     ),
     path("auth/registration/", auth.ThrottledRegisterView.as_view(), name="rest_register"),
     path("auth/", include("dj_rest_auth.urls")),
+    path("account/export/", views_account.AccountExportView.as_view(), name="account-export"),
+    path("account/delete/", views_account.AccountDeleteView.as_view(), name="account-delete"),
     path("auth/registration/", include("dj_rest_auth.registration.urls")),
 ]

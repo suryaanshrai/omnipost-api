@@ -19,6 +19,7 @@ _SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts"
 
 
 class FacebookConnector(Connector):
+    server_app_env = ("META_APP_ID", "META_APP_SECRET")
     slug = "facebook"
     capabilities = Capabilities(
         slug="facebook",

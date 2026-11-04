@@ -4,6 +4,51 @@ info:
   version: 1.0.0
   description: REST API for the OmniPost project
 paths:
+  /account/delete/:
+    post:
+      operationId: account_delete_create
+      description: |-
+        POST {password} -> deletes your account. Workspaces where you're the
+        only member go with it (channels, posts, media). If you own a workspace
+        that has other members, make one of them an owner first.
+      tags:
+      - account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDelete'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AccountDelete'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AccountDelete'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /account/export/:
+    get:
+      operationId: account_export_retrieve
+      description: |-
+        GET -> everything OmniPost stores about you and your workspaces, as
+        JSON (no credentials or keys, which stay encrypted).
+      tags:
+      - account
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountExport'
+          description: ''
   /ai/alt-text/:
     post:
       operationId: ai_alt_text_create
@@ -1569,6 +1614,107 @@ paths:
       responses:
         '204':
           description: No response body
+  /notifications/:
+    get:
+      operationId: notifications_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+        description: Only unread notifications.
+      tags:
+      - notifications
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /notifications/{id}/read/:
+    post:
+      operationId: notifications_read_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+        description: Only unread notifications.
+      tags:
+      - notifications
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /notifications/read-all/:
+    post:
+      operationId: notifications_read_all_create
+      parameters:
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+        description: Only unread notifications.
+      tags:
+      - notifications
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadAll'
+          description: ''
+  /notifications/unread-count/:
+    get:
+      operationId: notifications_unread_count_retrieve
+      parameters:
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+        description: Only unread notifications.
+      tags:
+      - notifications
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+          description: ''
   /oauth/complete/:
     post:
       operationId: oauth_complete_create
@@ -3343,6 +3489,21 @@ components:
       - committed
       - limit
       - reserved
+    AccountDelete:
+      type: object
+      properties:
+        password:
+          type: string
+      required:
+      - password
+    AccountExport:
+      type: object
+      properties:
+        user:
+          type: object
+          additionalProperties: {}
+      required:
+      - user
     AltTextRequest:
       type: object
       properties:
@@ -3642,6 +3803,10 @@ components:
           type: boolean
         supports_oauth:
           type: boolean
+        available:
+          type: boolean
+        supports_metrics:
+          type: boolean
         credential_fields:
           type: array
           items:
@@ -3670,6 +3835,7 @@ components:
           items:
             $ref: '#/components/schemas/MediaRule'
       required:
+      - available
       - credential_fields
       - display_name
       - max_text_length
@@ -3680,6 +3846,7 @@ components:
       - slug
       - supports_alt_text
       - supports_link
+      - supports_metrics
       - supports_oauth
       - supports_scheduling_native
       - supports_threads
@@ -3941,6 +4108,56 @@ components:
       - id
       - user
       - workspace
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        workspace:
+          type: integer
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/NotificationKindEnum'
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        body:
+          type: string
+          readOnly: true
+        link:
+          type: string
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - body
+      - created_at
+      - id
+      - kind
+      - link
+      - read_at
+      - title
+      - workspace
+    NotificationKindEnum:
+      enum:
+      - post_failed
+      - channel_broken
+      - preflight_failed
+      type: string
+      description: |-
+        * `post_failed` - Post failed
+        * `channel_broken` - Channel needs reconnecting
+        * `preflight_failed` - Scheduled post at risk
     NullEnum:
       enum:
       - null
@@ -4147,6 +4364,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Membership'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
     PaginatedPostList:
       type: object
       required:
@@ -4792,7 +5032,7 @@ components:
           readOnly: true
     PatchedUserDetails:
       type: object
-      description: User model w/o password
+      description: '/auth/user/: dj-rest-auth''s fields plus the email-alerts preference.'
       properties:
         pk:
           type: integer
@@ -4815,6 +5055,8 @@ components:
         last_name:
           type: string
           maxLength: 150
+        email_notifications:
+          type: boolean
     PatchedVoiceProfile:
       type: object
       description: |-
@@ -5355,6 +5597,13 @@ components:
       - id
       - time_of_day
       - weekday
+    ReadAll:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required:
+      - updated
     RecurrenceRule:
       type: object
       description: |-
@@ -5592,6 +5841,13 @@ components:
           maxLength: 40
       required:
       - key
+    UnreadCount:
+      type: object
+      properties:
+        unread:
+          type: integer
+      required:
+      - unread
     User:
       type: object
       properties:
@@ -5622,7 +5878,7 @@ components:
       - username
     UserDetails:
       type: object
-      description: User model w/o password
+      description: '/auth/user/: dj-rest-auth''s fields plus the email-alerts preference.'
       properties:
         pk:
           type: integer
@@ -5645,6 +5901,8 @@ components:
         last_name:
           type: string
           maxLength: 150
+        email_notifications:
+          type: boolean
       required:
       - email
       - pk

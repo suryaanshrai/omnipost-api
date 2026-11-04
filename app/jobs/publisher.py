@@ -31,6 +31,7 @@ from connectors.registry import get as get_connector
 from django.db import transaction
 from django.utils import timezone
 from omnipost_api.models import Post, PostTarget, PublishAttempt
+from omnipost_api.services import notify
 
 from . import queue as job_queue
 from .backoff import DEFAULT_POLL_DELAY_S, MAX_RETRIES, backoff_seconds
@@ -168,9 +169,7 @@ def expire_stale_running(now=None) -> int:
             _finish(attempt, PublishAttempt.STATUS_FAILED, "UNKNOWN_OUTCOME", UNKNOWN_OUTCOME_DETAIL)
             target = attempt.post_target
             if target.epoch == attempt.epoch:
-                target.status = PostTarget.STATUS_FAILED
-                target.save(update_fields=["status", "updated_at"])
-                _recompute_post_status(target.post_id)
+                _fail_target(target)
             count += 1
             logger.warning("Attempt %s was stuck running; marked unknown outcome", attempt_id)
     return count
@@ -231,9 +230,12 @@ def _handle_error(attempt: PublishAttempt, post_target: PostTarget, exc: Connect
 
     if exc.error_class.value == "AUTH_EXPIRED":
         channel = post_target.channel
+        was_broken = channel.health == channel.HEALTH_BROKEN
         channel.health = channel.HEALTH_BROKEN
         channel.health_detail = "Authentication expired — reconnect this channel."
         channel.save(update_fields=["health", "health_detail", "updated_at"])
+        if not was_broken:
+            notify.channel_broken(channel)
 
     if exc.error_class.retryable and attempt.attempt_number < MAX_RETRIES:
         return _schedule_retry(attempt, post_target, retry_after=exc.retry_after)
@@ -253,6 +255,7 @@ def _fail_target(post_target: PostTarget) -> None:
     post_target.status = PostTarget.STATUS_FAILED
     post_target.save(update_fields=["status", "updated_at"])
     _recompute_post_status(post_target.post_id)
+    notify.post_failed(post_target)
 
 
 def _schedule_retry(attempt: PublishAttempt, post_target: PostTarget, retry_after: float | None):

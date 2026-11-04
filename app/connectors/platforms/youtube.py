@@ -55,6 +55,7 @@ def _client_secret() -> str:
 
 
 class YouTubeConnector(Connector):
+    server_app_env = ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET")
     refreshes_tokens = True
     slug = "youtube"
     capabilities = Capabilities(

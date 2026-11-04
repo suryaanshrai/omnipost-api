@@ -365,6 +365,7 @@ AUTH_TOKEN_TTL_DAYS = int(os.environ.get("AUTH_TOKEN_TTL_DAYS", "30"))
 REST_AUTH = {
     "TOKEN_CREATOR": "omnipost_api.authentication.create_token",
     "PASSWORD_RESET_SERIALIZER": "omnipost_api.auth_serializers.FrontendPasswordResetSerializer",
+    "USER_DETAILS_SERIALIZER": "omnipost_api.auth_serializers.UserDetailsSerializer",
     "OLD_PASSWORD_FIELD_ENABLED": True,
 }
 

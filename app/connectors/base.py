@@ -126,6 +126,19 @@ class Connector(ABC):
     # True only for connectors whose refresh() really gets a new token.
     # Drives jobs.health's "refresh once after a 401" path.
     refreshes_tokens: bool = False
+    # Env vars this deployment must set (its own platform app) before anyone
+    # can connect this platform. Empty: works on any server.
+    server_app_env: tuple[str, ...] = ()
+
+    @property
+    def available_on_server(self) -> bool:
+        import os
+
+        return all(os.environ.get(name) for name in self.server_app_env)
+
+    @property
+    def supports_metrics(self) -> bool:
+        return type(self).fetch_metrics is not Connector.fetch_metrics
     """One platform integration. Subclass this directly for platforms with
     real state machines (media processing, chunked upload); use
     DeclarativeConnector for simple single-request REST platforms."""

@@ -59,6 +59,7 @@ def _client_secret() -> str:
 
 
 class TikTokConnector(Connector):
+    server_app_env = ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET")
     refreshes_tokens = True
     slug = "tiktok"
     capabilities = Capabilities(

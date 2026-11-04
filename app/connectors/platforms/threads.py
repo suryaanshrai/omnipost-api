@@ -56,6 +56,7 @@ def _app_secret() -> str:
 
 
 class ThreadsConnector(Connector):
+    server_app_env = ("THREADS_APP_ID", "THREADS_APP_SECRET")
     refreshes_tokens = True
     slug = "threads"
     capabilities = Capabilities(

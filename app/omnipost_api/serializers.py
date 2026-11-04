@@ -240,10 +240,15 @@ class ChannelSerializer(WorkspaceScopedSerializer):
         return channel
 
     def update(self, instance, validated_data):
+        """New credentials reconnect the channel in place: scheduled posts
+        keep their target, and the health warning clears."""
         credentials = validated_data.pop("credentials", None)
         instance = super().update(instance, validated_data)
         if credentials:
             instance.set_credentials(credentials)
+            instance.health = Channel.HEALTH_HEALTHY
+            instance.health_detail = ""
+            instance.save(update_fields=["health", "health_detail", "updated_at"])
         return instance
 
 
@@ -304,6 +309,10 @@ class ConnectorSerializer(serializers.Serializer):
     display_name = serializers.CharField()
     requires_own_app = serializers.BooleanField()
     supports_oauth = serializers.BooleanField()
+    # False when this deployment hasn't set up its own app for the platform
+    # (e.g. no META_APP_ID): connecting would fail, so the UI says so up front.
+    available = serializers.BooleanField()
+    supports_metrics = serializers.BooleanField()
     credential_fields = serializers.ListField(child=serializers.CharField())
     oauth_extra_fields = serializers.ListField(child=serializers.CharField())
     max_text_length = serializers.IntegerField(allow_null=True)

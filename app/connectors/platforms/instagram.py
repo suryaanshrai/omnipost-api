@@ -43,6 +43,7 @@ _SCOPES = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_
 
 
 class InstagramConnector(Connector):
+    server_app_env = ("META_APP_ID", "META_APP_SECRET")
     slug = "instagram"
     capabilities = Capabilities(
         slug="instagram",

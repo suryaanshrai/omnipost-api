@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from dj_rest_auth.serializers import PasswordResetSerializer
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework import serializers
 
 
 def frontend_reset_url(request, user, temp_key):
@@ -19,3 +21,12 @@ def frontend_reset_url(request, user, temp_key):
 class FrontendPasswordResetSerializer(PasswordResetSerializer):
     def get_email_options(self):
         return {"url_generator": frontend_reset_url}
+
+
+class UserDetailsSerializer(serializers.ModelSerializer):
+    """/auth/user/: dj-rest-auth's fields plus the email-alerts preference."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["pk", "username", "email", "first_name", "last_name", "email_notifications"]
+        read_only_fields = ["pk", "email"]

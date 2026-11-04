@@ -23,7 +23,8 @@ from . import crypto
 
 
 class User(AbstractUser):
-    pass
+    # Email me when a post fails or a channel needs reconnecting.
+    email_notifications = models.BooleanField(default=True)
 
 
 class Organization(models.Model):
@@ -558,6 +559,39 @@ class AuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.verb} by {self.actor} at {self.created_at}"
+
+
+class Notification(models.Model):
+    """Something a person should know about: a post that failed, a channel
+    that needs reconnecting. Shown in the app's bell and, if the user has
+    email_notifications on, emailed (jobs/notify.py)."""
+
+    KIND_POST_FAILED = "post_failed"
+    KIND_CHANNEL_BROKEN = "channel_broken"
+    KIND_PREFLIGHT_FAILED = "preflight_failed"
+    KIND_CHOICES = [
+        (KIND_POST_FAILED, "Post failed"),
+        (KIND_CHANNEL_BROKEN, "Channel needs reconnecting"),
+        (KIND_PREFLIGHT_FAILED, "Scheduled post at risk"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=30, choices=KIND_CHOICES)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True, default="")
+    # A path inside the app, e.g. "/app/connections/12".
+    link = models.CharField(max_length=300, blank=True, default="")
+    read_at = models.DateTimeField(null=True, blank=True)
+    emailed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "read_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.kind} for {self.user}: {self.title}"
 
 
 class QueueSlot(models.Model):

@@ -76,9 +76,14 @@ def refresh_channel(channel: Channel) -> bool:
         try:
             refreshed = connector.refresh(credentials)
         except AuthExpired:
+            was_broken = channel.health == Channel.HEALTH_BROKEN
             channel.health = Channel.HEALTH_BROKEN
             channel.health_detail = "Token refresh failed — reconnect this channel."
             channel.save(update_fields=["health", "health_detail", "updated_at"])
+            if not was_broken:
+                from omnipost_api.services import notify
+
+                notify.channel_broken(channel)
             logger.warning("Channel %s (%s) failed refresh, marked broken", channel.pk, channel.connector_slug)
             return False
 
@@ -123,6 +128,9 @@ def run_preflight_for_target(post_target_id: int) -> None:
         return  # already published/canceled/failed by the time this ran
 
     if not preflight_check(post_target):
+        from omnipost_api.services import notify
+
+        notify.preflight_failed(post_target)
         AuditEvent.objects.create(
             workspace_id=post_target.post.workspace_id,
             verb="channel.preflight_failed",

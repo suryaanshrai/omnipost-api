@@ -822,6 +822,8 @@ class ConnectorsView(APIView):
                     "display_name": caps.display_name,
                     "requires_own_app": connector.requires_own_app,
                     "supports_oauth": connector.supports_oauth,
+                    "available": connector.available_on_server,
+                    "supports_metrics": connector.supports_metrics,
                     "credential_fields": list(connector.credential_fields),
                     "oauth_extra_fields": list(connector.oauth_extra_fields),
                     "max_text_length": caps.max_text_length,
