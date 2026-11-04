@@ -41,6 +41,7 @@ from ..base import (
     PublishOutcome,
     PublishState,
     expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -88,7 +89,7 @@ class XConnector(Connector):
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": redirect_uri,
-            "scope": _SCOPES,
+            "scope": extra_scopes(_SCOPES, "X_EXTRA_SCOPES"),
             "state": signed_state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
@@ -368,3 +369,25 @@ class XConnector(Connector):
         if response.status_code in (400, 403, 422):
             raise InvalidMedia(f"X rejected the request while {action}.", raw_detail=response.text[:500])
         raise TransientError(f"X returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        response = requests.get(
+            f"{_API_BASE}/tweets/{remote_id}",
+            params={"tweet.fields": "public_metrics"},
+            headers={"Authorization": f"Bearer {credentials['ACCESS_TOKEN']}"},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("X rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        m = (response.json().get("data") or {}).get("public_metrics") or {}
+        if not m:
+            return {}
+        return {
+            "likes": m.get("like_count"),
+            "comments": m.get("reply_count"),
+            "shares": (m.get("retweet_count") or 0) + (m.get("quote_count") or 0),
+            "impressions": m.get("impression_count"),
+            **m,
+        }

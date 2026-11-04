@@ -367,3 +367,16 @@ def expiry_values(token_data: dict[str, Any]) -> dict[str, str]:
     if seconds <= 0:
         return {}
     return {"EXPIRES_AT": (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()}
+
+
+def extra_scopes(base: str, env_name: str, sep: str = " ") -> str:
+    """OAuth scopes plus any from `env_name`. Reading metrics needs a
+    permission some platforms only grant after app review (e.g. LinkedIn's
+    r_member_social, Threads' threads_manage_insights, YouTube's
+    youtube.readonly), so it's opt-in per deployment rather than requested
+    by default and refused at sign-in."""
+    import os
+
+    more = [s.strip() for s in os.environ.get(env_name, "").replace(",", " ").split() if s.strip()]
+    have = [s for s in base.replace(",", " ").split() if s]
+    return sep.join(have + [s for s in more if s not in have])

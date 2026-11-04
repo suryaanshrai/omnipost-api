@@ -8,9 +8,19 @@ picking the right endpoint per post_kind and carrying the Page access token
 
 from __future__ import annotations
 
+from typing import Any
+
 import requests
 
-from ..base import ChannelCredentials, Connector, OAuthAuthorization, PublishContext, PublishOutcome, PublishState
+from ..base import (
+    ChannelCredentials,
+    Connector,
+    OAuthAuthorization,
+    PublishContext,
+    PublishOutcome,
+    PublishState,
+    extra_scopes,
+)
 from ..capabilities import Capabilities, MediaRule
 from ..errors import PermanentError
 from . import meta_oauth
@@ -34,7 +44,7 @@ class FacebookConnector(Connector):
     )
 
     def authorize_url(self, redirect_uri: str, state: str, **extra: str) -> OAuthAuthorization:
-        url = meta_oauth.build_authorize_url(redirect_uri, state, _SCOPES)
+        url = meta_oauth.build_authorize_url(redirect_uri, state, extra_scopes(_SCOPES, "META_EXTRA_SCOPES", ","))
         return OAuthAuthorization(authorize_url=url, state=state)
 
     def exchange_code(self, code: str, redirect_uri: str, **extra: str) -> ChannelCredentials:
@@ -99,3 +109,36 @@ class FacebookConnector(Connector):
         if not response.ok:
             meta_oauth.raise_graph_error(response, action="posting the first comment on Facebook")
         return response.json().get("id")
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        token = credentials["PAGE_ACCESS_TOKEN"]
+        response = requests.get(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}",
+            params={
+                "fields": "reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares",
+                "access_token": token,
+            },
+            timeout=15,
+        )
+        if not response.ok:
+            if response.status_code in (401, 190):
+                meta_oauth.raise_graph_error(response, action="reading Facebook metrics")
+            return {}
+        body = response.json()
+        result: dict[str, Any] = {
+            "likes": ((body.get("reactions") or {}).get("summary") or {}).get("total_count"),
+            "comments": ((body.get("comments") or {}).get("summary") or {}).get("total_count"),
+            "shares": (body.get("shares") or {}).get("count", 0),
+            "impressions": None,
+        }
+        # Impressions need the read_insights permission; best effort.
+        insights = requests.get(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}/insights",
+            params={"metric": "post_impressions", "access_token": token},
+            timeout=15,
+        )
+        if insights.ok:
+            for row in insights.json().get("data", []):
+                if row.get("name") == "post_impressions" and row.get("values"):
+                    result["impressions"] = row["values"][0].get("value")
+        return result

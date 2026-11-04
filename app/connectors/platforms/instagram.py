@@ -24,6 +24,8 @@ account is discovered — Instagram itself has no separate OAuth dialog.
 
 from __future__ import annotations
 
+from typing import Any
+
 import requests
 
 from ..base import (
@@ -34,6 +36,7 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import PermanentError
@@ -66,7 +69,7 @@ class InstagramConnector(Connector):
     # --- OAuth ---
 
     def authorize_url(self, redirect_uri: str, state: str, **extra: str) -> OAuthAuthorization:
-        url = meta_oauth.build_authorize_url(redirect_uri, state, _SCOPES)
+        url = meta_oauth.build_authorize_url(redirect_uri, state, extra_scopes(_SCOPES, "META_EXTRA_SCOPES", ","))
         return OAuthAuthorization(authorize_url=url, state=state)
 
     def exchange_code(self, code: str, redirect_uri: str, **extra: str) -> ChannelCredentials:
@@ -214,3 +217,37 @@ class InstagramConnector(Connector):
         if not response.ok:
             meta_oauth.raise_graph_error(response, action="posting the first comment on Instagram")
         return response.json().get("id")
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        token = credentials["PAGE_ACCESS_TOKEN"]
+        response = requests.get(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}",
+            params={"fields": "like_count,comments_count", "access_token": token},
+            timeout=15,
+        )
+        if not response.ok:
+            if response.status_code == 401:
+                meta_oauth.raise_graph_error(response, action="reading Instagram metrics")
+            return {}
+        body = response.json()
+        result: dict[str, Any] = {
+            "likes": body.get("like_count"),
+            "comments": body.get("comments_count"),
+            "shares": None,
+            "impressions": None,
+        }
+        # Reach/views/shares need instagram_manage_insights; best effort.
+        insights = requests.get(
+            f"{meta_oauth.GRAPH_BASE}/{remote_id}/insights",
+            params={"metric": "reach,views,shares,saved", "access_token": token},
+            timeout=15,
+        )
+        if insights.ok:
+            values = {
+                row.get("name"): (row.get("values") or [{}])[0].get("value")
+                for row in insights.json().get("data", [])
+            }
+            result["impressions"] = values.get("views") or values.get("reach")
+            result["shares"] = values.get("shares")
+            result.update({k: v for k, v in values.items() if k})
+        return result

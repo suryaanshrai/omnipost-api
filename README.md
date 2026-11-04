@@ -46,6 +46,29 @@ cd app && poetry run python manage.py spectacular --file ../schema.yml   # keep 
 CI runs all of these on every pull request, plus `makemigrations --check`
 and `pip-audit`.
 
+### Live checks against real accounts
+
+The normal suite mocks every platform. To check that your own accounts and
+tokens work, use the live tests (never run in CI):
+
+```bash
+cp .env.live.example .env.live     # fill in the platforms you have
+./scripts/live_test.sh             # metrics read for each platform with credentials
+./scripts/live_test.sh -k mastodon # one platform
+LIVE_PUBLISH=1 ./scripts/live_test.sh -k bluesky   # also publishes a real test post
+```
+
+Platforms without credentials are skipped, with the variable to set. By
+default the tests only read: they fetch metrics for a post you already
+have. `LIVE_PUBLISH=1` publishes a short "OmniPost live test" post, and
+`LIVE_FIRST_COMMENT=1` replies to it. Delete those posts afterwards.
+
+Analytics on LinkedIn, Threads, YouTube and Instagram reach need extra
+OAuth scopes. Set `LINKEDIN_EXTRA_SCOPES`, `THREADS_EXTRA_SCOPES`,
+`YOUTUBE_EXTRA_SCOPES` or `META_EXTRA_SCOPES` (see the omnipost repo's
+`.env.example`), get the scope approved for your app, then reconnect the
+channel.
+
 ## How it fits together
 
 ```

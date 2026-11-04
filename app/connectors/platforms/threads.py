@@ -18,6 +18,7 @@ for this product) — THREADS_APP_ID / THREADS_APP_SECRET in the environment.
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -31,6 +32,7 @@ from ..base import (
     PublishOutcome,
     PublishState,
     expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, PermanentError, RateLimited, TransientError
@@ -77,7 +79,7 @@ class ThreadsConnector(Connector):
         params = {
             "client_id": _app_id(),
             "redirect_uri": redirect_uri,
-            "scope": _SCOPES,
+            "scope": extra_scopes(_SCOPES, "THREADS_EXTRA_SCOPES", ","),
             "response_type": "code",
             "state": state,
         }
@@ -246,3 +248,27 @@ class ThreadsConnector(Connector):
         if response.status_code == 429:
             raise RateLimited(f"Threads rate-limited {action}.", raw_detail=response.text[:500], retry_after=60)
         raise TransientError(f"Threads returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        """Needs the threads_manage_insights permission (THREADS_EXTRA_SCOPES)."""
+        response = requests.get(
+            f"{_GRAPH_BASE}/{remote_id}/insights",
+            params={"metric": "views,likes,replies,reposts,quotes", "access_token": credentials["ACCESS_TOKEN"]},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("Threads rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        values = {
+            row.get("name"): (row.get("values") or [{}])[0].get("value") for row in response.json().get("data", [])
+        }
+        if not values:
+            return {}
+        return {
+            "likes": values.get("likes"),
+            "comments": values.get("replies"),
+            "shares": (values.get("reposts") or 0) + (values.get("quotes") or 0),
+            "impressions": values.get("views"),
+            **values,
+        }

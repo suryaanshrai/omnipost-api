@@ -17,6 +17,7 @@ OAuth2 with `access_type=offline` to get a refresh token up front.
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -29,6 +30,7 @@ from ..base import (
     PublishOutcome,
     PublishState,
     expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -82,7 +84,7 @@ class YouTubeConnector(Connector):
             "client_id": _client_id(),
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": _SCOPE,
+            "scope": extra_scopes(_SCOPE, "YOUTUBE_EXTRA_SCOPES"),
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
@@ -228,3 +230,32 @@ class YouTubeConnector(Connector):
         if response.status_code in (429, 403):
             raise RateLimited(f"YouTube rate-limited {action}.", raw_detail=response.text[:500], retry_after=60)
         raise TransientError(f"YouTube returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        """Needs youtube.readonly (YOUTUBE_EXTRA_SCOPES); the upload scope
+        alone can't read statistics."""
+        response = requests.get(
+            f"{_API_BASE}/videos",
+            params={"part": "statistics", "id": remote_id},
+            headers={"Authorization": f"Bearer {credentials['ACCESS_TOKEN']}"},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("Google rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        items = response.json().get("items") or []
+        if not items:
+            return {}
+        stats = items[0].get("statistics") or {}
+
+        def num(key: str) -> int | None:
+            return int(stats[key]) if stats.get(key) is not None else None
+
+        return {
+            "likes": num("likeCount"),
+            "comments": num("commentCount"),
+            "shares": None,
+            "impressions": num("viewCount"),
+            **stats,
+        }
