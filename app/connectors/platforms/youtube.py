@@ -17,6 +17,7 @@ OAuth2 with `access_type=offline` to get a refresh token up front.
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -28,6 +29,8 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -54,6 +57,8 @@ def _client_secret() -> str:
 
 
 class YouTubeConnector(Connector):
+    server_app_env = ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET")
+    refreshes_tokens = True
     slug = "youtube"
     capabilities = Capabilities(
         slug="youtube",
@@ -79,7 +84,7 @@ class YouTubeConnector(Connector):
             "client_id": _client_id(),
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": _SCOPE,
+            "scope": extra_scopes(_SCOPE, "YOUTUBE_EXTRA_SCOPES"),
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
@@ -114,7 +119,11 @@ class YouTubeConnector(Connector):
         channel_id = items[0]["id"] if items else ""
 
         return ChannelCredentials(
-            values={"ACCESS_TOKEN": access_token, "REFRESH_TOKEN": token_data.get("refresh_token", "")},
+            values={
+                "ACCESS_TOKEN": access_token,
+                "REFRESH_TOKEN": token_data.get("refresh_token", ""),
+                **expiry_values(token_data),
+            },
             external_account_id=channel_id,
         )
 
@@ -134,8 +143,9 @@ class YouTubeConnector(Connector):
         )
         if not response.ok:
             raise AuthExpired("Google rejected this channel's refresh token.", raw_detail=response.text[:500])
+        token_data = response.json()
         return ChannelCredentials(
-            values={**credentials.values, "ACCESS_TOKEN": response.json()["access_token"]},
+            values={**credentials.values, "ACCESS_TOKEN": token_data["access_token"], **expiry_values(token_data)},
             external_account_id=credentials.external_account_id,
         )
 
@@ -220,3 +230,32 @@ class YouTubeConnector(Connector):
         if response.status_code in (429, 403):
             raise RateLimited(f"YouTube rate-limited {action}.", raw_detail=response.text[:500], retry_after=60)
         raise TransientError(f"YouTube returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        """Needs youtube.readonly (YOUTUBE_EXTRA_SCOPES); the upload scope
+        alone can't read statistics."""
+        response = requests.get(
+            f"{_API_BASE}/videos",
+            params={"part": "statistics", "id": remote_id},
+            headers={"Authorization": f"Bearer {credentials['ACCESS_TOKEN']}"},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("Google rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        items = response.json().get("items") or []
+        if not items:
+            return {}
+        stats = items[0].get("statistics") or {}
+
+        def num(key: str) -> int | None:
+            return int(stats[key]) if stats.get(key) is not None else None
+
+        return {
+            "likes": num("likeCount"),
+            "comments": num("commentCount"),
+            "shares": None,
+            "impressions": num("viewCount"),
+            **stats,
+        }

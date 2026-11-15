@@ -6,20 +6,22 @@ none of the connector/media/scheduling views need to do.
 
 from __future__ import annotations
 
+import requests
 from ai import service
 from ai.errors import AIConfigurationError, AIProviderError
 from ai.errors import QuotaExceeded as AIQuotaExceeded
 from ai.quota import usage_for
+from connectors.netguard import UnsafeURL
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MediaAsset, UsageCounter, Workspace
-from .permissions import workspaces_for_user
+from .models import MediaAsset, Membership, UsageCounter, Workspace
+from .permissions import require_role
 from .serializers import MediaAssetSerializer, ValidateFindingSerializer
 from .serializers_ai import (
     AltTextRequestSerializer,
@@ -30,8 +32,7 @@ from .serializers_ai import (
 
 
 def _require_workspace_access(request, workspace: Workspace) -> None:
-    if workspace.pk not in workspaces_for_user(request.user):
-        raise PermissionDenied("You are not a member of this workspace.")
+    require_role(request.user, workspace.pk, Membership.ROLE_CONTRIBUTOR)
 
 
 def _run(fn, *args, **kwargs) -> Response:
@@ -46,6 +47,10 @@ def _run(fn, *args, **kwargs) -> Response:
         raise ValidationError({"detail": exc.safe_detail}, code="not_configured") from exc
     except AIProviderError as exc:
         return Response({"detail": exc.safe_detail}, status=status.HTTP_502_BAD_GATEWAY)
+    except UnsafeURL as exc:
+        raise ValidationError({"source_url": str(exc)}) from exc
+    except requests.RequestException:
+        return Response({"detail": "Couldn't fetch that page."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class GenerateVariantsView(APIView):
@@ -55,6 +60,7 @@ class GenerateVariantsView(APIView):
     from the plan, not N separate "generate a caption" calls."""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "ai"
 
     @extend_schema(
         request=GenerateVariantsRequestSerializer,
@@ -105,6 +111,7 @@ class RepurposeView(APIView):
     voice_profile?, provider?} -> {results: {format: text}}."""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "ai"
 
     @extend_schema(
         request=RepurposeRequestSerializer,
@@ -142,6 +149,7 @@ class AltTextView(APIView):
     MediaAsset.alt_text so the composer picks it up immediately."""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "ai"
 
     @extend_schema(
         request=AltTextRequestSerializer,
@@ -161,6 +169,7 @@ class GenerateImageView(APIView):
     """POST {workspace, prompt, aspect?, provider?} -> the created MediaAsset."""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "ai"
 
     @extend_schema(request=GenerateImageRequestSerializer, responses=MediaAssetSerializer)
     def post(self, request):
@@ -223,7 +232,7 @@ class UsageView(APIView):
             workspace = Workspace.objects.get(pk=workspace_id)
         except (Workspace.DoesNotExist, ValueError, TypeError):
             raise ValidationError({"workspace": "No such workspace."}) from None
-        _require_workspace_access(request, workspace)
+        require_role(request.user, workspace.pk, Membership.ROLE_VIEWER)
 
         from django.conf import settings
 

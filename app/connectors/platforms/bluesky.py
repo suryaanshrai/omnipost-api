@@ -1,7 +1,6 @@
-"""Bluesky (AT Protocol), hand-written rather than declarative because it
-needs a session token minted from an app password, then (for image posts) a
-raw-bytes blob upload before the post record itself can reference it — not a
-single templated JSON request.
+"""Bluesky (AT Protocol). Needs a session token minted from an app password,
+then (for image posts) a raw-bytes blob upload before the post record itself
+can reference it.
 
 Auth: app password (identifier + app-specific password from Bluesky account
 settings), not OAuth. This is the currently-supported, simpler auth method;

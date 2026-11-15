@@ -1,31 +1,28 @@
 [tool.poetry]
 name = "omnipost-api"
 version = "0.1.0"
-description = "Rest API for the Omnipost application"
+description = "REST API and job engine for OmniPost"
 authors = ["Suryaansh Rai <suryaanshrai@gmail.com>"]
 readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-django = "^5.1.7"
-requests = "^2.32.3"
+django = "^5.2.8"
+requests = "^2.33.0"
 boto3 = "^1.37.13"
-pillow = "^11.1.0"
-cryptography = "^44.0.2"
+pillow = "^13.0.0"
+cryptography = ">=50.0.0"
 gunicorn = "^23.0.0"
 psycopg2-binary = "^2.9.10"
 whitenoise = "^6.9.0"
-zxcvbn = "^4.5.0"
 django-rq = "^3.0.0"
-djangorestframework = "^3.16.0"
+djangorestframework = "^3.17.2"
 drf-spectacular = "^0.28.0"
 python-magic = "^0.4.27"
 dj-rest-auth = "^7.0.1"
-django-allauth = "^65.8.0"
+django-allauth = "^65.13.0"
 django-cors-headers = "^4.7.0"
-pyyaml = "^6.0.2"
-anthropic = "^0.40.0"
 django-storages = "^1.14.4"
 sentry-sdk = "^2.19.0"
 prometheus-client = "^0.21.1"
@@ -36,7 +33,6 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 django-extensions = "^3.2.3"
 pygraphviz = "^1.14"
-jupyterlab = "^4.3.6"
 pytest = "^8.3.4"
 pytest-django = "^4.9.0"
 factory-boy = "^3.3.1"
@@ -46,12 +42,16 @@ ruff = "^0.8.4"
 mypy = "^1.14.0"
 django-stubs = "^5.1.1"
 types-requests = "^2.32.0"
+pytest-cov = "^6.0.0"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "app.settings"
 pythonpath = ["app"]
 testpaths = ["app"]
 python_files = ["test_*.py"]
+# Live platform tests only run when asked for: ./scripts/live_test.sh
+addopts = "-m 'not live'"
+markers = ["live: calls real platform APIs; needs credentials in .env.live"]
 
 [tool.ruff]
 line-length = 120

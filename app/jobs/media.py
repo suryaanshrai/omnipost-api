@@ -60,7 +60,7 @@ def probe_asset(asset_id: int) -> None:
     asset.size_bytes = len(data)
     asset.mime_type = magic.from_buffer(data, mime=True)
 
-    suffix = Path(asset.file.name).suffix or _suffix_for_mime(asset.mime_type)
+    suffix = Path(asset.file.name or "").suffix or _suffix_for_mime(asset.mime_type)
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
         with os.fdopen(fd, "wb") as tmp:
@@ -120,7 +120,7 @@ def generate_rendition(asset_id: int, profile: str) -> int:
     with asset.file.open("rb") as fh:
         data = fh.read()
 
-    src_suffix = Path(asset.file.name).suffix or ".bin"
+    src_suffix = Path(asset.file.name or "").suffix or ".bin"
     fd, src_path = tempfile.mkstemp(suffix=src_suffix)
     os.close(fd)
     out_path: str | None = None
@@ -163,8 +163,8 @@ def _target_crop(src_w: int, src_h: int, aspect: tuple[int, int]) -> tuple[int, 
 
 
 def _render_image(path: str, spec: RenditionProfile) -> tuple[str, int, int]:
-    with Image.open(path) as img:
-        img = img.convert("RGB")
+    with Image.open(path) as opened:
+        img = opened.convert("RGB")
         crop_w, crop_h = _target_crop(img.width, img.height, spec.aspect)
         left = (img.width - crop_w) // 2
         top = (img.height - crop_h) // 2

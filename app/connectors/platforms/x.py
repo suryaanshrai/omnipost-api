@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -39,6 +40,8 @@ from ..base import (
     PublishContext,
     PublishOutcome,
     PublishState,
+    expiry_values,
+    extra_scopes,
 )
 from ..capabilities import Capabilities, MediaRule
 from ..errors import AuthExpired, InvalidMedia, PermanentError, RateLimited, TransientError
@@ -55,6 +58,7 @@ _MEDIA_CATEGORY = {"image": "tweet_image", "gif": "tweet_gif", "video": "tweet_v
 
 
 class XConnector(Connector):
+    refreshes_tokens = True
     slug = "x"
     requires_own_app = True
     capabilities = Capabilities(
@@ -85,7 +89,7 @@ class XConnector(Connector):
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": redirect_uri,
-            "scope": _SCOPES,
+            "scope": extra_scopes(_SCOPES, "X_EXTRA_SCOPES"),
             "state": signed_state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
@@ -140,6 +144,7 @@ class XConnector(Connector):
                 "REFRESH_TOKEN": token_data.get("refresh_token", ""),
                 "CLIENT_ID": client_id,
                 "CLIENT_SECRET": client_secret,
+                **expiry_values(token_data),
             },
             external_account_id=user_id,
         )
@@ -162,6 +167,7 @@ class XConnector(Connector):
                 **credentials.values,
                 "ACCESS_TOKEN": token_data["access_token"],
                 "REFRESH_TOKEN": token_data.get("refresh_token", refresh_token),
+                **expiry_values(token_data),
             },
             external_account_id=credentials.external_account_id,
         )
@@ -290,6 +296,9 @@ class XConnector(Connector):
             self._raise_error(response, action="posting a tweet")
         return response.json()["data"]["id"]
 
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        return self._create_tweet(credentials["ACCESS_TOKEN"], text, reply_to=remote_id)
+
     def _upload_media(self, token: str, item: MediaRef) -> tuple[str, dict[str, Any]]:
         content = self._fetch_bytes(item.url)
         category = _MEDIA_CATEGORY.get(item.kind, "tweet_image")
@@ -350,12 +359,35 @@ class XConnector(Connector):
         if response.status_code == 401:
             raise AuthExpired("X rejected this channel's credentials.", raw_detail=response.text[:500])
         if response.status_code == 429:
+            # x-rate-limit-reset is a Unix timestamp, not a number of seconds.
             header = response.headers.get("x-rate-limit-reset")
-            raise RateLimited(
-                f"X rate-limited {action}.",
-                raw_detail=response.text[:500],
-                retry_after=float(header) if header else 60.0,
-            )
+            try:
+                retry_after = max(float(header) - time.time(), 1.0) if header else 60.0
+            except ValueError:
+                retry_after = 60.0
+            raise RateLimited(f"X rate-limited {action}.", raw_detail=response.text[:500], retry_after=retry_after)
         if response.status_code in (400, 403, 422):
             raise InvalidMedia(f"X rejected the request while {action}.", raw_detail=response.text[:500])
         raise TransientError(f"X returned {response.status_code} while {action}.", raw_detail=response.text[:500])
+
+    def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
+        response = requests.get(
+            f"{_API_BASE}/tweets/{remote_id}",
+            params={"tweet.fields": "public_metrics"},
+            headers={"Authorization": f"Bearer {credentials['ACCESS_TOKEN']}"},
+            timeout=15,
+        )
+        if response.status_code == 401:
+            raise AuthExpired("X rejected this channel's credentials.", raw_detail=response.text[:500])
+        if not response.ok:
+            return {}
+        m = (response.json().get("data") or {}).get("public_metrics") or {}
+        if not m:
+            return {}
+        return {
+            "likes": m.get("like_count"),
+            "comments": m.get("reply_count"),
+            "shares": (m.get("retweet_count") or 0) + (m.get("quote_count") or 0),
+            "impressions": m.get("impression_count"),
+            **m,
+        }

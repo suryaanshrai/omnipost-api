@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_ai
+from . import auth, views, views_account, views_ai, views_billing, views_public
 
 router = DefaultRouter()
 router.register("workspaces", views.WorkspaceViewSet, basename="workspace")
@@ -17,12 +17,23 @@ router.register("app-credentials", views.AppCredentialViewSet, basename="app-cre
 router.register("queue-slots", views.QueueSlotViewSet, basename="queue-slot")
 router.register("blackout-windows", views.BlackoutWindowViewSet, basename="blackout-window")
 router.register("recurrence-rules", views.RecurrenceRuleViewSet, basename="recurrence-rule")
+router.register("notifications", views_account.NotificationViewSet, basename="notification")
+router.register("webhooks", views.WebhookViewSet, basename="webhook")
+router.register("feeds", views.FeedViewSet, basename="feed")
+router.register("account/tokens", auth.ApiTokenViewSet, basename="api-token")
 
 app_name = "omnipost_api"
 
 urlpatterns = [
     path("", include(router.urls)),
     path("connectors/", views.ConnectorsView.as_view(), name="connectors"),
+    path("public/bio/<slug:slug>/", views_public.BioPageView.as_view(), name="public-bio"),
+    path("public/pricing/", views_billing.PricingView.as_view(), name="public-pricing"),
+    path("public/interest/", views_billing.PricingInterestView.as_view(), name="public-interest"),
+    path("billing/", views_billing.BillingView.as_view(), name="billing"),
+    path("billing/checkout/", views_billing.CheckoutView.as_view(), name="billing-checkout"),
+    path("billing/portal/", views_billing.PortalView.as_view(), name="billing-portal"),
+    path("billing/webhook/", views_billing.StripeWebhookView.as_view(), name="billing-webhook"),
     path("oauth/start/", views.OAuthStartView.as_view(), name="oauth-start"),
     path("oauth/complete/", views.OAuthCompleteView.as_view(), name="oauth-complete"),
     path("validate/", views.ValidateView.as_view(), name="validate"),
@@ -31,6 +42,20 @@ urlpatterns = [
     path("ai/alt-text/", views_ai.AltTextView.as_view(), name="ai-alt-text"),
     path("ai/images/", views_ai.GenerateImageView.as_view(), name="ai-images"),
     path("ai/usage/", views_ai.UsageView.as_view(), name="ai-usage"),
+    # Throttled versions of dj-rest-auth's views; listed first so they win.
+    path("auth/login/", auth.ThrottledLoginView.as_view(), name="rest_login"),
+    path("auth/password/reset/", auth.ThrottledPasswordResetView.as_view(), name="rest_password_reset"),
+    path(
+        "auth/password/reset/confirm/",
+        auth.ThrottledPasswordResetConfirmView.as_view(),
+        name="rest_password_reset_confirm",
+    ),
+    path("auth/registration/", auth.ThrottledRegisterView.as_view(), name="rest_register"),
+    path("auth/logout/", auth.CookieLogoutView.as_view(), name="rest_logout"),
+    path("auth/password/change/", auth.GuardedPasswordChangeView.as_view(), name="rest_password_change"),
+    path("auth/cookie/", auth.CookieSessionView.as_view(), name="auth-cookie"),
     path("auth/", include("dj_rest_auth.urls")),
+    path("account/export/", views_account.AccountExportView.as_view(), name="account-export"),
+    path("account/delete/", views_account.AccountDeleteView.as_view(), name="account-delete"),
     path("auth/registration/", include("dj_rest_auth.registration.urls")),
 ]

@@ -123,9 +123,35 @@ class OAuthAuthorization:
 
 
 class Connector(ABC):
-    """One platform integration. Subclass this directly for platforms with
-    real state machines (media processing, chunked upload); use
-    DeclarativeConnector for simple single-request REST platforms."""
+    """One platform integration: declare `capabilities`, implement
+    `validate()` (inherited default covers most rules) and `publish()`, and
+    optionally OAuth, `refresh()` and `fetch_metrics()`."""
+
+    # True only for connectors whose refresh() really gets a new token.
+    # Drives jobs.health's "refresh once after a 401" path.
+    refreshes_tokens: bool = False
+    # Env vars this deployment must set (its own platform app) before anyone
+    # can connect this platform. Empty: works on any server.
+    server_app_env: tuple[str, ...] = ()
+
+    @property
+    def available_on_server(self) -> bool:
+        import os
+
+        return all(os.environ.get(name) for name in self.server_app_env)
+
+    @property
+    def supports_metrics(self) -> bool:
+        return type(self).fetch_metrics is not Connector.fetch_metrics
+
+    @property
+    def supports_first_comment(self) -> bool:
+        return type(self).post_first_comment is not Connector.post_first_comment
+
+    def post_first_comment(self, credentials: ChannelCredentials, remote_id: str, text: str) -> str | None:
+        """Reply to / comment on our own just-published post. Returns the
+        comment's id when the platform gives one."""
+        raise NotImplementedError(f"{self.slug} does not support a first comment")
 
     slug: str
     capabilities: Capabilities
@@ -307,9 +333,15 @@ class Connector(ABC):
         return credentials
 
     def token_expiry(self, credentials: ChannelCredentials) -> datetime | None:
-        """When the access token expires, if known. Drives the maintenance
-        cron's refresh scheduling (Phase 2)."""
-        return None
+        """When the access token expires, if known. Drives jobs/health.py's
+        refresh sweep. Connectors record it as EXPIRES_AT via expiry_values()."""
+        raw = credentials.get("EXPIRES_AT")
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
 
     def fetch_metrics(self, credentials: ChannelCredentials, remote_id: str) -> dict[str, Any]:
         """Best-effort engagement metrics for a published post (Phase 7).
@@ -320,3 +352,31 @@ class Connector(ABC):
         default (empty dict) means "no metrics available for this platform
         yet", which jobs/metrics.py treats as a no-op, not an error."""
         return {}
+
+
+def expiry_values(token_data: dict[str, Any]) -> dict[str, str]:
+    """{"EXPIRES_AT": iso} from an OAuth token response's `expires_in`, or {}
+    when the platform didn't say. Merged into a connector's credential values
+    so token_expiry() (and the refresh sweep) knows when to refresh."""
+    from datetime import UTC, timedelta
+
+    try:
+        seconds = int(token_data.get("expires_in") or 0)
+    except (TypeError, ValueError):
+        return {}
+    if seconds <= 0:
+        return {}
+    return {"EXPIRES_AT": (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()}
+
+
+def extra_scopes(base: str, env_name: str, sep: str = " ") -> str:
+    """OAuth scopes plus any from `env_name`. Reading metrics needs a
+    permission some platforms only grant after app review (e.g. LinkedIn's
+    r_member_social, Threads' threads_manage_insights, YouTube's
+    youtube.readonly), so it's opt-in per deployment rather than requested
+    by default and refused at sign-in."""
+    import os
+
+    more = [s.strip() for s in os.environ.get(env_name, "").replace(",", " ").split() if s.strip()]
+    have = [s for s in base.replace(",", " ").split() if s]
+    return sep.join(have + [s for s in more if s not in have])

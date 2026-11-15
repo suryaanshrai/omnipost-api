@@ -27,6 +27,9 @@ def enqueued(monkeypatch):
     monkeypatch.setattr("jobs.queue.enqueue_attempt_now", fake_now)
     monkeypatch.setattr("jobs.queue.enqueue_preflight_at", fake_preflight)
     monkeypatch.setattr("jobs.queue.enqueue_metrics_poll", fake_metrics_poll)
+    monkeypatch.setattr(
+        "jobs.queue.enqueue_first_comment", lambda post_target_id: calls.append(("first_comment", post_target_id))
+    )
     return calls
 
 

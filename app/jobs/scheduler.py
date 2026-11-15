@@ -23,9 +23,14 @@ def schedule_post_target(post_target: PostTarget, run_at=None) -> PublishAttempt
     first (see views.PostViewSet.publish) so the new attempt's idempotency
     key differs from the old one."""
     run_at = run_at or timezone.now()
+    if post_target.attempts.filter(epoch=post_target.epoch).exists():
+        # Rescheduling a failed post (or anything already tried): start a new
+        # epoch so attempt #1 doesn't collide with the old epoch's attempts
+        # and any of them still in the queue are dropped as superseded.
+        post_target.epoch += 1
     post_target.status = PostTarget.STATUS_SCHEDULED
     post_target.run_at = run_at
-    post_target.save(update_fields=["status", "run_at", "updated_at"])
+    post_target.save(update_fields=["status", "run_at", "epoch", "updated_at"])
 
     attempt = PublishAttempt.objects.create(
         post_target=post_target,

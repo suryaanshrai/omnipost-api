@@ -11,8 +11,8 @@ import base64
 import html
 import re
 
-import requests as http
 from connectors.base import ChannelCredentials, PublishContext
+from connectors.netguard import safe_get
 from connectors.registry import get as get_connector
 from django.core.files.base import ContentFile
 from jobs.media import RENDITION_PROFILES
@@ -40,7 +40,7 @@ def _extract_text_from_html(markup: str) -> str:
 
 
 def fetch_source_text(url: str) -> str:
-    response = http.get(url, timeout=_URL_FETCH_TIMEOUT_S, headers={"User-Agent": "OmniPost/1.0"})
+    response = safe_get(url, timeout=_URL_FETCH_TIMEOUT_S, headers={"User-Agent": "OmniPost/1.0"})
     response.raise_for_status()
     return _extract_text_from_html(response.text)
 

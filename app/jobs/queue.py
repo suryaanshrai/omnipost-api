@@ -21,8 +21,21 @@ def enqueue_attempt_at(attempt_id: int, run_at: datetime) -> None:
 
 
 def enqueue_attempt_now(attempt_id: int) -> None:
+    """Used by the reconciler to recover a due attempt. The fixed job id
+    means a recovery job that's still waiting for a worker isn't enqueued
+    again on every sweep."""
+    from rq.exceptions import NoSuchJobError
+    from rq.job import Job, JobStatus
+
     queue = django_rq.get_queue("publish")
-    queue.enqueue("jobs.publisher.run_publish_attempt", attempt_id)
+    job_id = f"recover-attempt-{attempt_id}"
+    try:
+        existing = Job.fetch(job_id, connection=queue.connection)
+        if existing.get_status() in (JobStatus.QUEUED, JobStatus.STARTED, JobStatus.SCHEDULED, JobStatus.DEFERRED):
+            return
+    except NoSuchJobError:
+        pass
+    queue.enqueue("jobs.publisher.run_publish_attempt", attempt_id, job_id=job_id)
 
 
 def enqueue_preflight_at(post_target_id: int, run_at: datetime) -> None:
@@ -43,3 +56,18 @@ def enqueue_rendition(asset_id: int, profile: str) -> None:
 def enqueue_metrics_poll(post_target_id: int) -> None:
     queue = django_rq.get_queue("metrics")
     queue.enqueue("jobs.metrics.poll_metrics", post_target_id)
+
+
+def enqueue_notification_email(notification_id: int) -> None:
+    queue = django_rq.get_queue("default")
+    queue.enqueue("jobs.notify.send_notification_email", notification_id)
+
+
+def enqueue_webhook(hook_id: int, payload: dict) -> None:
+    queue = django_rq.get_queue("default")
+    queue.enqueue("jobs.webhooks.deliver", hook_id, payload)
+
+
+def enqueue_first_comment(post_target_id: int) -> None:
+    queue = django_rq.get_queue("publish")
+    queue.enqueue("jobs.first_comment.post_first_comment", post_target_id)

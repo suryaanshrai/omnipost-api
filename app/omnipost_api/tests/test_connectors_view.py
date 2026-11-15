@@ -90,3 +90,15 @@ def test_connectors_capability_fields_match_the_registry(db, django_user_model):
         "allowed_aspect_ratios",
         "allowed_mime_types",
     }
+
+
+def test_connectors_report_server_availability_and_metrics(db, django_user_model, monkeypatch):
+    monkeypatch.delenv("META_APP_ID", raising=False)
+    user = django_user_model.objects.create_user(username="avail", password="x")
+    client = APIClient()
+    client.force_authenticate(user)
+    by_slug = {c["slug"]: c for c in client.get("/connectors/").data}
+    assert by_slug["instagram"]["available"] is False
+    assert by_slug["bluesky"]["available"] is True
+    assert by_slug["bluesky"]["supports_metrics"] is True
+    assert by_slug["discord"]["supports_metrics"] is False

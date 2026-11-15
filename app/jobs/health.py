@@ -19,8 +19,11 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from connectors.errors import AuthExpired
+import requests
+from connectors.base import Connector
+from connectors.errors import AuthExpired, ConnectorError
 from connectors.registry import get as get_connector
+from django.db import transaction
 from django.utils import timezone
 from omnipost_api.models import Channel, PostTarget
 
@@ -37,34 +40,60 @@ def refresh_expiring_channels() -> dict[str, int]:
     refreshed = 0
     broken = 0
     for channel in due:
-        if refresh_channel(channel):
+        try:
+            ok = refresh_channel(channel)
+        except (ConnectorError, requests.RequestException):
+            # A platform hiccup on one channel shouldn't stop the sweep; it
+            # gets another try next run.
+            logger.warning("Refresh of channel %s failed transiently", channel.pk, exc_info=True)
+            continue
+        if ok:
             refreshed += 1
         else:
             broken += 1
     return {"refreshed": refreshed, "broken": broken}
 
 
+def supports_refresh(connector: Connector) -> bool:
+    return connector.refreshes_tokens
+
+
 def refresh_channel(channel: Channel) -> bool:
     """Returns True on success. On AuthExpired, marks the channel broken so
-    the user sees a reconnect prompt instead of a mysteriously failing post."""
+    the user sees a reconnect prompt instead of a mysteriously failing post.
+
+    The channel row is locked for the refresh: platforms that rotate refresh
+    tokens (X, TikTok) invalidate the old one on use, so two concurrent
+    refreshes would leave one of them holding a dead token."""
     from connectors.base import ChannelCredentials
 
-    connector = get_connector(channel.connector_slug)
-    credentials = ChannelCredentials(values=channel.get_credentials(), external_account_id=channel.external_account_id)
-    try:
-        refreshed = connector.refresh(credentials)
-    except AuthExpired:
-        channel.health = Channel.HEALTH_BROKEN
-        channel.health_detail = "Token refresh failed — reconnect this channel."
-        channel.save(update_fields=["health", "health_detail", "updated_at"])
-        logger.warning("Channel %s (%s) failed refresh, marked broken", channel.pk, channel.connector_slug)
-        return False
+    with transaction.atomic():
+        channel = Channel.objects.select_for_update().get(pk=channel.pk)
+        connector = get_connector(channel.connector_slug)
+        credentials = ChannelCredentials(
+            values=channel.get_credentials(), external_account_id=channel.external_account_id
+        )
+        try:
+            refreshed = connector.refresh(credentials)
+        except AuthExpired:
+            was_broken = channel.health == Channel.HEALTH_BROKEN
+            channel.health = Channel.HEALTH_BROKEN
+            channel.health_detail = "Token refresh failed — reconnect this channel."
+            channel.save(update_fields=["health", "health_detail", "updated_at"])
+            if not was_broken:
+                from omnipost_api.services import notify
 
-    channel.set_credentials(refreshed.values)
-    new_expiry = connector.token_expiry(refreshed)
-    if new_expiry:
-        channel.token_expires_at = new_expiry
-    channel.save(update_fields=["token_expires_at", "updated_at"])
+                notify.channel_broken(channel)
+            logger.warning("Channel %s (%s) failed refresh, marked broken", channel.pk, channel.connector_slug)
+            return False
+
+        channel.set_credentials(refreshed.values)
+        new_expiry = connector.token_expiry(refreshed)
+        if new_expiry:
+            channel.token_expires_at = new_expiry
+        channel.health = Channel.HEALTH_HEALTHY
+        channel.health_detail = ""
+        channel.save(update_fields=["token_expires_at", "health", "health_detail", "updated_at"])
     return True
 
 
@@ -99,6 +128,9 @@ def run_preflight_for_target(post_target_id: int) -> None:
         return  # already published/canceled/failed by the time this ran
 
     if not preflight_check(post_target):
+        from omnipost_api.services import notify
+
+        notify.preflight_failed(post_target)
         AuditEvent.objects.create(
             workspace_id=post_target.post.workspace_id,
             verb="channel.preflight_failed",

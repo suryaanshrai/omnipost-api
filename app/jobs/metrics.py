@@ -10,7 +10,7 @@ every other part of the job engine.
 Two entry points:
   * poll_metrics(post_target_id) — one fetch, enqueued once right after a
     successful publish (jobs/publisher.py) and again by each sweep below.
-  * sweep_due_metrics() — periodic scan (metrics_poll_loop management
+  * sweep_due_metrics() — periodic scan (run_scheduler management
     command) that finds published targets due for another poll and enqueues
     them. Polling tapers off and stops entirely after METRICS_POLL_WINDOW_DAYS
     since most engagement happens in a post's first days.
