@@ -1,5 +1,5 @@
 # --- build: resolve dependencies with Poetry, install them into a venv ---
-FROM python:3.12-slim AS build
+FROM python:3.15-slim AS build
 
 RUN pip install --no-cache-dir poetry==1.8.5 poetry-plugin-export==1.8.0
 WORKDIR /src
@@ -9,7 +9,7 @@ RUN poetry export --only main --format requirements.txt --output requirements.tx
     && /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # --- runtime: no Poetry, no build tools ---
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Set by CI to the commit this image was built from; settings.py uses it as
 # the Sentry release, and images are tagged with the same SHA for rollback.
