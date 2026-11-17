@@ -4491,7 +4491,7 @@ components:
         provider:
           nullable: true
           oneOf:
-          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/Provider934Enum'
           - $ref: '#/components/schemas/NullEnum'
       required:
       - media
@@ -5075,7 +5075,7 @@ components:
         provider:
           nullable: true
           oneOf:
-          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/Provider934Enum'
           - $ref: '#/components/schemas/NullEnum'
       required:
       - prompt
@@ -5097,7 +5097,7 @@ components:
         provider:
           nullable: true
           oneOf:
-          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/Provider934Enum'
           - $ref: '#/components/schemas/NullEnum'
       required:
       - brief
@@ -5135,6 +5135,7 @@ components:
         file:
           type: string
           format: uri
+          nullable: true
         csv_text:
           type: string
       required:
@@ -5191,8 +5192,11 @@ components:
         username:
           type: string
         email:
-          type: string
-          format: email
+          oneOf:
+          - type: string
+            format: email
+          - type: string
+            maxLength: 0
         password:
           type: string
       required:
@@ -6205,9 +6209,12 @@ components:
           items:
             type: integer
         link:
-          type: string
-          format: uri
-          maxLength: 200
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
         status:
           allOf:
           - $ref: '#/components/schemas/PostStatusEnum'
@@ -6321,9 +6328,12 @@ components:
           $ref: '#/components/schemas/PostKindEnum'
         variants: {}
         link:
-          type: string
-          format: uri
-          maxLength: 200
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
         media:
           type: array
           items:
@@ -6557,9 +6567,12 @@ components:
           items:
             type: integer
         link:
-          type: string
-          format: uri
-          maxLength: 200
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
         status:
           allOf:
           - $ref: '#/components/schemas/PostStatusEnum'
@@ -6879,7 +6892,7 @@ components:
       - billing_enabled
       - plans
       - show_pricing
-    Provider4baEnum:
+    Provider934Enum:
       enum:
       - anthropic
       - openai
@@ -7067,9 +7080,12 @@ components:
           $ref: '#/components/schemas/PostKindEnum'
         variants: {}
         link:
-          type: string
-          format: uri
-          maxLength: 200
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
         media:
           type: array
           items:
@@ -7144,9 +7160,12 @@ components:
           type: string
           default: ''
         source_url:
-          type: string
-          format: uri
-          default: ''
+          oneOf:
+          - type: string
+            format: uri
+            default: ''
+          - type: string
+            maxLength: 0
         target_formats:
           type: array
           items:
@@ -7157,7 +7176,7 @@ components:
         provider:
           nullable: true
           oneOf:
-          - $ref: '#/components/schemas/Provider4baEnum'
+          - $ref: '#/components/schemas/Provider934Enum'
           - $ref: '#/components/schemas/NullEnum'
       required:
       - target_formats
