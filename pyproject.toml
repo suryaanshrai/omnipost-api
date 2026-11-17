@@ -61,6 +61,11 @@ exclude = ["*/migrations/*"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.isort]
+# The Django project package (app/app). Older ruff inferred this from the
+# directory layout; newer versions don't, and would re-sort its imports.
+known-first-party = ["app"]
+
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
