@@ -461,6 +461,21 @@ files = [
 ]
 
 [[package]]
+name = "croniter"
+version = "7.0.0"
+description = "croniter provides iteration for datetime object with cron like format"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "croniter-7.0.0-py3-none-any.whl", hash = "sha256:92090bce3cef195a037a46b78430c4cdd6250e90671d9d7dcd9e486147daaca4"},
+    {file = "croniter-7.0.0.tar.gz", hash = "sha256:a0b2568303c774f6a4ea2d4ce2e72b1ee911029c7070d64a1befe05cdb107f5a"},
+]
+
+[package.dependencies]
+python-dateutil = "*"
+
+[[package]]
 name = "cryptography"
 version = "50.0.2"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
@@ -633,23 +648,24 @@ Django = ">=3.2"
 
 [[package]]
 name = "django-rq"
-version = "3.0.0"
+version = "4.2.0"
 description = "An app that provides django integration for RQ (Redis Queue)"
 optional = false
-python-versions = "*"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "django-rq-3.0.0.tar.gz", hash = "sha256:7bdadb85d9909c118cf1ee1b9bdd1a74ebf141bf8f3c2de2409fcac6080f67ac"},
-    {file = "django_rq-3.0.0-py2.py3-none-any.whl", hash = "sha256:bd2ef287a28301f64c4282293648e4f8c6076dd895a545c9c6b98bde4a82a4ce"},
+    {file = "django_rq-4.2.0-py3-none-any.whl", hash = "sha256:1a41151c2830184939b043e541eca0667b635f3deddcd3452ce52348cf5bbc38"},
+    {file = "django_rq-4.2.0.tar.gz", hash = "sha256:b1d6546f9f5446987dcc1146b5f9bd7c4343ad38551f984aefa8e331309b5364"},
 ]
 
 [package.dependencies]
-django = ">=3.2"
+django = ">=4.2"
 redis = ">=3.5"
-rq = ">=2"
+rq = ">=2.6.1"
 
 [package.extras]
-sentry = ["sentry-sdk (>=1.0.0)"]
+prometheus = ["prometheus-client (>=0.4.0)"]
+testing = ["pytest (>=7.0)", "pytest-django (>=4.5)"]
 
 [[package]]
 name = "django-storages"
@@ -1807,19 +1823,20 @@ files = [
 
 [[package]]
 name = "rq"
-version = "2.2.0"
+version = "3.0.0"
 description = "RQ is a simple, lightweight, library for creating background jobs, and processing them."
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rq-2.2.0-py3-none-any.whl", hash = "sha256:dacbfe1ccb79a45c8cd95dec7951620679fa0195570b63da3f9347622d33accc"},
-    {file = "rq-2.2.0.tar.gz", hash = "sha256:b636760f1e4c183022031c142faa0483e687885824e9732ba2953f994104e203"},
+    {file = "rq-3.0.0-py3-none-any.whl", hash = "sha256:71b92cb7b2880e0d0ac2a462945e3f09243122f61465cec4238689d8ddf2abf4"},
+    {file = "rq-3.0.0.tar.gz", hash = "sha256:b41e39b3c36ec3faf9e2402c638a0b25fe18ebb93a1cb15193bc69694f054618"},
 ]
 
 [package.dependencies]
 click = ">=5"
-redis = ">=3.5"
+croniter = "*"
+redis = ">=5.0.1"
 
 [[package]]
 name = "ruff"
@@ -2072,4 +2089,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "5970425350637b59760c428d45f585ce76e1c0de999402c63d73e9404baff855"
+content-hash = "8d457fb49720392bdc143eb368433d3816b829baf6a416297966d1effd0d24a6"
