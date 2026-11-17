@@ -693,24 +693,24 @@ sftp = ["paramiko (>=1.15)"]
 
 [[package]]
 name = "django-stubs"
-version = "5.2.9"
+version = "6.1.2"
 description = "Mypy stubs for Django"
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["dev"]
 files = [
-    {file = "django_stubs-5.2.9-py3-none-any.whl", hash = "sha256:2317a7130afdaa76f6ff7f623650d7f3bf1b6c86a60f95840e14e6ec6de1a7cd"},
-    {file = "django_stubs-5.2.9.tar.gz", hash = "sha256:c192257120b08785cfe6f2f1c91f1797aceae8e9daa689c336e52c91e8f6a493"},
+    {file = "django_stubs-6.1.2-py3-none-any.whl", hash = "sha256:ffb6e74f54b8c1f9b2f3bc4852c5abbaa2324b2a7cb1c51854c5f95abe67165c"},
+    {file = "django_stubs-6.1.2.tar.gz", hash = "sha256:d62b15fa5cbae79b1922d015e1454d299959d230221dadb23f65c749480b97ec"},
 ]
 
 [package.dependencies]
 django = "*"
-django-stubs-ext = ">=5.2.9"
+django-stubs-ext = ">=6.0.2"
 types-pyyaml = "*"
 typing-extensions = ">=4.11.0"
 
 [package.extras]
-compatible-mypy = ["mypy (>=1.13,<1.20)"]
+compatible-mypy = ["mypy (>=1.13,<2.5)"]
 oracle = ["oracledb"]
 redis = ["redis", "types-redis"]
 
@@ -2089,4 +2089,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "8d457fb49720392bdc143eb368433d3816b829baf6a416297966d1effd0d24a6"
+content-hash = "79fda1cbb0785391f44b7b3d4a4610981ba48ee65622aac68da10734617e85e6"

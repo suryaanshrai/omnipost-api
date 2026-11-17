@@ -40,7 +40,7 @@ responses = "^0.25.3"
 fakeredis = "^2.26.2"
 ruff = "^0.8.4"
 mypy = "^1.14.0"
-django-stubs = "^5.1.1"
+django-stubs = ">=5.1.1,<7.0.0"
 types-requests = "^2.32.0"
 pytest-cov = ">=6,<8"
 
