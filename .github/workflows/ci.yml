@@ -69,6 +69,12 @@ jobs:
         run: pip install poetry==1.8.5 poetry-plugin-export==1.8.0
 
       - name: Install dependencies
+        # pygraphviz 1.14's generated C wrapper passes an `unsigned int *`
+        # where newer graphviz wants `size_t *`; GCC 14 (current runners)
+        # makes that an error, so the dev install fails before any check
+        # runs. Keep it a warning: nothing in CI renders a graph.
+        env:
+          CFLAGS: -Wno-error=incompatible-pointer-types
         run: poetry install --no-root --with dev
 
       - name: ruff
