@@ -117,7 +117,14 @@ class CookieTokenAuthentication(ExpiringTokenAuthentication):
         key = request.COOKIES.get(settings.AUTH_COOKIE_NAME)
         if not key or not request.META.get(COOKIE_HEADER_META):
             return None
-        return self.authenticate_credentials(key)
+        # A cookie whose token is gone (signed out on another device, or
+        # expired) means "not signed in", not an error. Raising here would
+        # 401 every request that carries it, including the sign-in request
+        # that replaces it, and page scripts can't clear an httpOnly cookie.
+        try:
+            return self.authenticate_credentials(key)
+        except AuthenticationFailed:
+            return None
 
     def authenticate_header(self, request):
         return "Token"

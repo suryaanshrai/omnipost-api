@@ -110,6 +110,37 @@ def test_web_app_login_sets_an_httponly_cookie_and_hides_the_key(db, django_user
     assert client.get("/workspaces/", HTTP_X_OMNIPOST_CLIENT="web").status_code == 401
 
 
+def test_a_stale_cookie_does_not_block_signing_in_again(db, django_user_model):
+    from rest_framework.authtoken.models import Token
+
+    _user(django_user_model, "stale")
+    client = APIClient()
+    body = {"username": "stale", "password": "pw-12345678"}
+    assert client.post("/auth/login/", body, HTTP_X_OMNIPOST_CLIENT="web").status_code == 200
+
+    # Signing out on another device deletes the token; this browser still has the cookie.
+    Token.objects.all().delete()
+    stale = client.cookies["omnipost_auth"].value
+    assert client.get("/workspaces/", HTTP_X_OMNIPOST_CLIENT="web").status_code == 401
+
+    response = client.post("/auth/login/", body, HTTP_X_OMNIPOST_CLIENT="web")
+    assert response.status_code == 200, response.data
+    assert response.cookies["omnipost_auth"].value not in ("", stale)
+    assert client.get("/workspaces/", HTTP_X_OMNIPOST_CLIENT="web").status_code == 200
+
+
+def test_signing_out_with_a_stale_cookie_clears_it(db, django_user_model):
+    from rest_framework.authtoken.models import Token
+
+    _user(django_user_model, "gone")
+    client = APIClient()
+    client.post("/auth/login/", {"username": "gone", "password": "pw-12345678"}, HTTP_X_OMNIPOST_CLIENT="web")
+    Token.objects.all().delete()
+    # There's no session left to end, but the dead cookie goes either way.
+    out = client.post("/auth/logout/", HTTP_X_OMNIPOST_CLIENT="web")
+    assert out.cookies["omnipost_auth"].value == ""
+
+
 def test_other_clients_still_get_the_key_in_the_body(db, django_user_model):
     _user(django_user_model, "cli")
     response = APIClient().post("/auth/login/", {"username": "cli", "password": "pw-12345678"})
